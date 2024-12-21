@@ -1,5 +1,5 @@
 tileset_bios:
-.incbin "tileset.chr", $00, $A0
+.incbin "tileset.chr", $00, $100
 
 tilemap_bios:
 	.byte 1, 2, 0, 0, 0, 0, 1, 2

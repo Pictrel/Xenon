@@ -1,8 +1,10 @@
 #include <raylib.h>
 #include <6502.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "font.h"
 
@@ -79,15 +81,19 @@ Texture gpu_fb;
 #define SCREEN_H 150
 #define VBLANK_SIZE 28
 
-#define GPU_DEBUG
+//#define GPU_DEBUG
+
+#define GPU_ENABLE_SPRITES
 
 typedef struct __attribute__((packed)) {
-	uint8_t col    : 4;
-	uint8_t type   : 4;
+	uint8_t unused : 4;
+	uint8_t hflip  : 1;
+	uint8_t vflip  : 1;
+	uint8_t pal    : 2;
 	
 	uint8_t x;
 	uint8_t y;
-	uint8_t attr;
+	uint8_t c;
 } OAMEnt;
 
 int get_tile_value(int t, int x, int y) {
@@ -181,6 +187,7 @@ void DrawSprite(int col, int x, int y, int chr) {
 	}
 } */
 
+
 Color bg_pixel(uint8_t x, uint8_t y) {
 	x += IO_VMX;
 	y += IO_VMY;
@@ -199,13 +206,31 @@ Color bg_pixel(uint8_t x, uint8_t y) {
 	return cpal[get_tile_value(tile, chrx, chry) % 4];
 }
 
+Color obj_pixel(uint8_t x, uint8_t y) {
+	OAMEnt *oam = (OAMEnt*)vram;
+	
+	for (int i=0; i<64; i++) {
+		if ((x - oam[i].x) < 8 && (x - oam[i].x) >= 0 &&
+		    (y - oam[i].y) < 8 && (y - oam[i].y) >= 0) {
+			
+			return opal[get_tile_value(oam[i].c, x - oam[i].x, y - oam[i].y) + 0];
+			
+		}
+	}
+	
+	return BLANK;
+}
+
 void render_pixel(int x, int y) {
-	ImageDrawRectangle(&fb, x, y, 1, 1, bg_pixel(x, y));
+	ImageDrawPixel(&fb, x, y, bg_pixel(x, y));
+	
+#ifdef GPU_ENABLE_SPRITES
+	Color op = obj_pixel(x, y); 
+	if (op.a) ImageDrawPixel(&fb, x, y, op);
+#endif
 }
 
 void render_scanline(int y) {
-	
-	
 	for (int x=0; x<256; x++) {
 		render_pixel(x, y);
 	} 
@@ -339,7 +364,7 @@ int main(void) {
 	
 	InitWindow(SCREEN_W * 2, SCREEN_H * 2, "xenon");
 	SetWindowState(FLAG_WINDOW_RESIZABLE);
-	//SetTargetFPS(0);
+	//SetTargetFPS(60);
 	
 	SetWindowMinSize(SCREEN_W, SCREEN_H);
 	

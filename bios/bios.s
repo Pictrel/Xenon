@@ -14,6 +14,8 @@ reset:
 	;place tiles
 	jsr copy_tilemap
 	
+	jsr copy_title
+	
 	lda #$C0
 	sta IO_VMX
 	lda #$E0
@@ -21,6 +23,24 @@ reset:
 	
 @halt:
 	jmp @halt
+
+
+
+copy_title:
+	ldx #$00
+	
+@loop:
+	lda xenonstr_oam,x
+	sta VRAM_OAM,x
+	
+	inx
+	txa
+	cmp #(4 * 5)
+	bne @loop
+	
+	rts
+
+
 
 copy_tileset:
 	ldx #$00
@@ -30,6 +50,8 @@ copy_tileset:
 	inx
 	bne @loop
 	rts
+
+
 
 copy_tilemap:
 	ldx #$00
@@ -63,6 +85,8 @@ copy_tilemap:
 @end:
 	rts
 
+
+
 nmi:
 	;inc IO_VMX
 	;inc IO_VMY
@@ -75,7 +99,12 @@ irq:
 .segment "DATA"
  
 
-copyright_str: .byte " (C) Pictrel 2024 v0.03", $00
+xenonstr_oam:
+	.byte $01, $3C, $70, $0A
+	.byte $01, $4C, $70, $0B
+	.byte $01, $5c, $70, $0C
+	.byte $01, $6c, $70, $0D
+	.byte $01, $7c, $70, $0C
 
 .include "graphics.s"
 
