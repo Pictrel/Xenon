@@ -8,54 +8,33 @@ reset:
 	sta z_tick
 	sta z_oam_size
 	
-	ldx $00
-	
-@loop:
-	txa
-	asl
-	asl
-	tay
-	
-	;type & color
-	lda #$75
-	sta $C000,y
-	
-	;x position
-	tya
-	asl
-	iny
-	sta $C000,y
-	
-	;y position
-	iny
-	
-	;character
-	lda copyright_str,x
-	bze @after_loop
-	iny
-	sta $C000,y
-	
-	inc z_oam_size
-	
-	inx
-	jmp @loop
-	
-@after_loop:
-	
 	;copy the tile data
-	ldx #$00
+	jsr copy_tileset
 	
-@copy_loop:
+	;place tiles
+	jsr copy_tilemap
+	
+	lda #$C0
+	sta IO_VMX
+	lda #$E0
+	sta IO_VMY
+	
+@halt:
+	jmp @halt
+
+copy_tileset:
+	ldx #$00
+@loop:
 	lda tileset_bios,x
 	sta $D000,x
 	inx
-	bne @copy_loop
-	
-	;place tiles
-	
+	bne @loop
+	rts
+
+copy_tilemap:
 	ldx #$00
 	ldy #$00
-@tilemap_loop:
+@loop:
 	lda tilemap_bios,x
 	sta VRAM_TILEMAP,y
 	lda #$00
@@ -67,30 +46,22 @@ reset:
 	;check if we reached the end
 	txa
 	cmp #64
-	bcs @after_tilemap_loop
+	bcs @end
 	
 	;is y 8, 16, 24...
 	tya
 	and #%00000111
 	bze @addoffset
 	
-	jmp @tilemap_loop
+	jmp @loop
 @addoffset:
 	tya
 	clc
 	adc #24
 	tay
-	jmp @tilemap_loop
-
-@after_tilemap_loop:
-	lda #$C0
-	sta IO_VMX
-	lda #$E0
-	sta IO_VMY
-	
-
-@halt:
-	jmp @halt
+	jmp @loop
+@end:
+	rts
 
 nmi:
 	;inc IO_VMX
