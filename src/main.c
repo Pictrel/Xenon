@@ -262,7 +262,7 @@ void update(void) {
 } */
 
 void draw(void) {
-	ClearBackground(WHITE);
+	ClearBackground(BLACK);
 	if (IsTextureValid(gpu_fb)) UnloadTexture(gpu_fb);
 	gpu_fb = LoadTextureFromImage(fb);
 	
@@ -270,7 +270,7 @@ void draw(void) {
 	                       GetRenderHeight() / SCREEN_H);
 	
 	const int w = 200 * SCALE;
-	const int h = 200 * SCALE;
+	const int h = 150 * SCALE;
 	
 	if (USE_LETTERBOX) {
 		DrawTexturePro(gpu_fb, 
