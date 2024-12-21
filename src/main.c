@@ -1,12 +1,15 @@
 #include <raylib.h>
 #include <6502.h>
 #include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 
 #include "font.h"
 
 M6502 cpu;
 int cpu_cyc;
+
+int USE_LETTERBOX = 1;
 
 Color cpal[16] = {
 	(Color){0x16, 0x17, 0x1a, 0xFF},
@@ -65,6 +68,15 @@ uint8_t IO_VWL;
 uint8_t IO_VWR;
 
 uint8_t IO_ICTL;
+
+Image fb;
+Texture gpu_fb;
+
+#define SCREEN_W 200
+#define SCREEN_H 150
+#define VBLANK_SIZE 28
+
+#define GPU_DEBUG
 
 typedef struct __attribute__((packed)) {
 	uint8_t col    : 4;
@@ -148,7 +160,7 @@ void cpu_write(void *ctx, zuint16 addr, zuint8 val) {
 	else if (addr >= 0xF000 && addr <= 0xFFFF) ; //u cant write to bios dummy
 }
 
-void DrawTile(int col, int x, int y, int chr) {
+/* void DrawTile(int col, int x, int y, int chr) {
 	for (int i=0; i<8; i++) {
 		for (int j=0; j<8; j++) {
 			DrawRectangle((x + i) * 2,
@@ -164,11 +176,50 @@ void DrawSprite(int col, int x, int y, int chr) {
 			              (y + j) * 2, 2, 2, opal[get_tile_value(chr, i, j) % 4 + (col % 4) * 4]);
 		}
 	}
+} */
+
+Color bg_pixel(uint8_t x, uint8_t y) {
+	x += IO_VMX;
+	y += IO_VMY;
+
+#ifdef GPU_DEBUG
+	if (x == 0 || y == 0) return WHITE;
+#endif
+
+	uint8_t tilex = x / 8;
+	uint8_t tiley = y / 8;
+	uint8_t chrx = x % 8;
+	uint8_t chry = y % 8;
+	
+	uint8_t tile = vram[0x800 + (tilex + tiley * 32)];
+	
+	return cpal[get_tile_value(tile, chrx, chry) % 4];
+}
+
+void render_pixel(int x, int y) {
+	ImageDrawRectangle(&fb, x, y, 1, 1, bg_pixel(x, y));
+}
+
+void render_scanline(int y) {
+	for (int x=0; x<256; x++) {
+		render_pixel(x, y);
+	} 
 }
 
 void update() {
-	cpu_cyc += m6502_run(&cpu, 65536);
-	m6502_nmi(&cpu);
+	for (int y=0; y<SCREEN_H * 4 + VBLANK_SIZE; y++) {
+		if (y == SCREEN_H * 4) {
+			m6502_nmi(&cpu);
+		}
+		
+		IO_VY = y / 4;
+		
+		cpu_cyc += m6502_run(&cpu, 264);
+		
+		//printf("C%d\n", cpu_cyc);
+		
+		render_scanline(IO_VY);
+	}
 }
 
 void DrawChar(int col, int x, int y, int attr) {
@@ -188,7 +239,7 @@ void DrawChar(int col, int x, int y, int attr) {
 	}
 }
 
-void DrawBackground() {
+/* void DrawBackground() {
 	for (int x=0; x<64; x++) {
 		for (int y=0; y<64; y++) {
 			int eff_x = x * 8 - IO_VMX; //effective X coord
@@ -203,20 +254,32 @@ void DrawBackground() {
 			}
 		}
 	}
-}
+} */
 
 void draw() {
-	ClearBackground(BLACK);
+	ClearBackground(WHITE);
+	if (IsTextureValid(gpu_fb)) UnloadTexture(gpu_fb);
+	gpu_fb = LoadTextureFromImage(fb);
+	
+	int SCALE = fmin(GetRenderWidth() / SCREEN_W,
+	                 GetRenderHeight() / SCREEN_H);
+	
+	DrawTexturePro(gpu_fb, 
+		(Rectangle){0, 0, SCREEN_W, SCREEN_H},
+		(Rectangle){0, 0, GetRenderWidth(), GetRenderHeight()},
+		(Vector2){0, 0}, 0.0f, WHITE);
+	
+	/* ClearBackground(BLACK);
 	
 	VRAMEnt *gfx = (VRAMEnt*)vram;
 	
-	/*
+	
 	printf("\n");
 	for (int i=0; i<1024; i++) {
 		if ((i % 16) == 0) printf("\n");
 		printf("%02x ", vram[i]);
 	}
-	*/
+	
 	
 	DrawBackground();
 	
@@ -239,10 +302,10 @@ void draw() {
 			case 0x0E: break;
 			case 0x0F: break;
 		}
-	}
+	} */
 	
-	DrawFPS(10, 10);
-}
+	DrawFPS(0, 0); 
+} 
 
 int main() {
 	FILE *fp = fopen("bios.bin", "r");
@@ -258,15 +321,19 @@ int main() {
 	
 	fread(bios, 1, 0x1000, fp);
 	
-	InitWindow(400, 288, "xenon");
-	SetTargetFPS(6000);
+	InitWindow(SCREEN_W * 2, SCREEN_H * 2, "xenon");
+	SetWindowState(FLAG_WINDOW_RESIZABLE);
+	//SetTargetFPS(0);
+	
+	SetWindowMinSize(SCREEN_W, SCREEN_H);
 	
 	cpu.read = cpu_read;
 	cpu.write = cpu_write;
 	
 	m6502_power(&cpu, TRUE);
-	
 	cpu.state.pc = cpu_read(NULL, 0xfffc) | (cpu_read(NULL, 0xfffd) << 8);
+	
+	fb = GenImageColor(SCREEN_W, SCREEN_H, BLANK);
 	
 	while (!WindowShouldClose()) {
 		BeginDrawing();

@@ -93,6 +93,8 @@ reset:
 	jmp @halt
 
 nmi:
+	;inc IO_VMX
+	;inc IO_VMY
 	inc z_tick
 	rti
 
