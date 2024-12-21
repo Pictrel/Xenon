@@ -161,8 +161,8 @@ void DrawChar(int col, int x, int y, int attr) {
 }
 
 void DrawBackground() {
-	for (int x=0; x<32; x++) {
-		for (int y=0; y<32; y++) {
+	for (int x=0; x<64; x++) {
+		for (int y=0; y<64; y++) {
 			int eff_x = x * 8 - IO_VMX; //effective X coord
 			int eff_y = y * 8 - IO_VMY; //effective Y coord
 			
