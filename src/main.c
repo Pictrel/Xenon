@@ -166,9 +166,10 @@ void DrawBackground() {
 			int eff_x = x * 8 - IO_VMX; //effective X coord
 			int eff_y = y * 8 - IO_VMY; //effective Y coord
 			
-			if ((eff_x + 8 > 0) && (eff_y + 8 > 0)) {
-				uint8_t tile = vram[0x800 + x + y * 32];
-				uint8_t attr = vram[0xC00 + x + y * 32];
+			if ((eff_x > -8) && (eff_y > -8) &&
+			    (eff_x < 192+8) && (eff_y < 144+8)) {
+				uint8_t tile = vram[0x800 + (x % 32) + (y % 32) * 32];
+				uint8_t attr = vram[0xC00 + (x % 32) + (y % 32) * 32];
 				
 				DrawTile(attr & 0b1111, eff_x, eff_y, tile);
 			}
