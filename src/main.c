@@ -88,7 +88,7 @@ typedef struct __attribute__((packed)) {
 	uint8_t x;
 	uint8_t y;
 	uint8_t attr;
-} VRAMEnt;
+} OAMEnt;
 
 int get_tile_value(int t, int x, int y) {
 	return (
@@ -204,6 +204,8 @@ void render_pixel(int x, int y) {
 }
 
 void render_scanline(int y) {
+	
+	
 	for (int x=0; x<256; x++) {
 		render_pixel(x, y);
 	} 
@@ -225,7 +227,7 @@ void update() {
 	}
 }
 
-void DrawChar(int col, int x, int y, int attr) {
+/*void DrawChar(int col, int x, int y, int attr) {
 	
 	for (int i=0; i<8; i++) {
 		for (int j=0; j<12; j++) {
@@ -240,7 +242,7 @@ void DrawChar(int col, int x, int y, int attr) {
 			}
 		}
 	}
-}
+}*/
 
 /* void DrawBackground() {
 	for (int x=0; x<64; x++) {
