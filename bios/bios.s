@@ -83,14 +83,16 @@ reset:
 	jmp @tilemap_loop
 
 @after_tilemap_loop:
+	lda #$C0
+	sta IO_VMX
+	lda #$E0
+	sta IO_VMY
+	
 
 @halt:
 	jmp @halt
 
 nmi:
-	inc IO_VMX
-	inc IO_VMY
-	
 	inc z_tick
 	rti
 

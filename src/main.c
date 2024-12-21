@@ -8,7 +8,26 @@
 M6502 cpu;
 int cpu_cyc;
 
-Color pal[64] = {
+Color cpal[16] = {
+	(Color){0x16, 0x17, 0x1a, 0xFF},
+	(Color){0x7f, 0x06, 0x22, 0xFF},
+	(Color){0xd6, 0x24, 0x11, 0xFF},
+	(Color){0xff, 0x84, 0x26, 0xFF},
+	(Color){0xff, 0xd1, 0x00, 0xFF},
+	(Color){0xfa, 0xfd, 0xff, 0xFF},
+	(Color){0xff, 0x80, 0xa4, 0xFF},
+	(Color){0xff, 0x26, 0x74, 0xFF},
+	(Color){0x94, 0x21, 0x6a, 0xFF},
+	(Color){0x43, 0x00, 0x67, 0xFF},
+	(Color){0x23, 0x49, 0x75, 0xFF},
+	(Color){0x68, 0xae, 0xd4, 0xFF},
+	(Color){0xbf, 0xff, 0x3c, 0xFF},
+	(Color){0x10, 0xd2, 0x75, 0xFF},
+	(Color){0x00, 0x78, 0x99, 0xFF},
+	(Color){0x00, 0x28, 0x59, 0xFF}
+};
+
+Color opal[16] = {
 	(Color){0x16, 0x17, 0x1a, 0xFF},
 	(Color){0x7f, 0x06, 0x22, 0xFF},
 	(Color){0xd6, 0x24, 0x11, 0xFF},
@@ -133,7 +152,16 @@ void DrawTile(int col, int x, int y, int chr) {
 	for (int i=0; i<8; i++) {
 		for (int j=0; j<8; j++) {
 			DrawRectangle((x + i) * 2,
-			              (y + j) * 2, 2, 2, pal[get_tile_value(chr, i, j) % 4 + (col % 16) * 4]);
+			              (y + j) * 2, 2, 2, cpal[get_tile_value(chr, i, j) % 4 + (col % 4) * 4]);
+		}
+	}
+}
+
+void DrawSprite(int col, int x, int y, int chr) {
+	for (int i=0; i<8; i++) {
+		for (int j=0; j<8; j++) {
+			DrawRectangle((x + i) * 2,
+			              (y + j) * 2, 2, 2, opal[get_tile_value(chr, i, j) % 4 + (col % 4) * 4]);
 		}
 	}
 }
@@ -149,11 +177,11 @@ void DrawChar(int col, int x, int y, int attr) {
 		for (int j=0; j<12; j++) {
 			if (attr & 0x80) {
 				DrawRectangle((x + i*2) * 2, (y + j*2) * 2, 4, 4,
-					((font_8x12[(attr % 128) * 12 + j] >> (7-i)) & 1) ? pal[col % 16] : BLANK
+					((font_8x12[(attr % 128) * 12 + j] >> (7-i)) & 1) ? opal[col % 16] : BLANK
 				);
 			} else {
 				DrawRectangle((x + i) * 2, (y + j) * 2, 2, 2,
-					((font_8x12[(attr & 0x7f) * 12 + j] >> (7-i)) & 1) ? pal[col % 16] : BLANK
+					((font_8x12[(attr & 0x7f) * 12 + j] >> (7-i)) & 1) ? opal[col % 16] : BLANK
 				);
 			}
 		}
@@ -230,7 +258,7 @@ int main() {
 	
 	fread(bios, 1, 0x1000, fp);
 	
-	InitWindow(384, 288, "xenon");
+	InitWindow(400, 288, "xenon");
 	SetTargetFPS(6000);
 	
 	cpu.read = cpu_read;
