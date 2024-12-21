@@ -11,6 +11,9 @@ int cpu_cyc;
 
 int USE_LETTERBOX = 1;
 
+/* Bubblegum 16 Palette (lospec)
+Created by PineappleOnPizza
+*/
 Color cpal[16] = {
 	(Color){0x16, 0x17, 0x1a, 0xFF},
 	(Color){0x7f, 0x06, 0x22, 0xFF},

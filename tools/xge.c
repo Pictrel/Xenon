@@ -19,6 +19,10 @@ int cur_y = 0;
 Font font;
 Font bold;
 
+/*
+Ice Cream GB (lospec)
+Created by Kerrie Lake
+*/
 const Color pal[4] = {
 	(Color){0x7c, 0x3f, 0x58, 0xff},
 	(Color){0xeb, 0x6b, 0x6f, 0xff},
