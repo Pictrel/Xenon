@@ -160,7 +160,7 @@ void cpu_write(void *ctx, zuint16 addr, zuint8 val) {
 	if (     addr >= 0x0000 && addr <= 0xBFFF) ram[addr % 0xC000] = bus;
 	else if (addr >= 0xC000 && addr <= 0xDFFF) vram[addr % 0x2000] = bus;
 	else if (addr >= 0xE000 && addr <= 0xEFFF) cpu_iowrite(addr & 0xFF, bus);
-	else if (addr >= 0xF000 && addr <= 0xFFFF) ; //u cant write to bios dummy
+	else if (addr >= 0xF000 && addr <= 0xFFFF) return; //u cant write to bios dummy
 }
 
 /* void DrawTile(int col, int x, int y, int chr) {
@@ -211,7 +211,7 @@ void render_scanline(int y) {
 	} 
 }
 
-void update() {
+void update(void) {
 	for (int y=0; y<SCREEN_H * 4 + VBLANK_SIZE; y++) {
 		if (y == SCREEN_H * 4) {
 			m6502_nmi(&cpu);
@@ -261,18 +261,29 @@ void update() {
 	}
 } */
 
-void draw() {
+void draw(void) {
 	ClearBackground(WHITE);
 	if (IsTextureValid(gpu_fb)) UnloadTexture(gpu_fb);
 	gpu_fb = LoadTextureFromImage(fb);
 	
-	int SCALE = fmin(GetRenderWidth() / SCREEN_W,
-	                 GetRenderHeight() / SCREEN_H);
+	const int SCALE = fmin(GetRenderWidth() / SCREEN_W,
+	                       GetRenderHeight() / SCREEN_H);
 	
-	DrawTexturePro(gpu_fb, 
-		(Rectangle){0, 0, SCREEN_W, SCREEN_H},
-		(Rectangle){0, 0, GetRenderWidth(), GetRenderHeight()},
-		(Vector2){0, 0}, 0.0f, WHITE);
+	const int w = 200 * SCALE;
+	const int h = 200 * SCALE;
+	
+	if (USE_LETTERBOX) {
+		DrawTexturePro(gpu_fb, 
+			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
+			(Rectangle){GetRenderWidth()  / 2 - w / 2, 
+			            GetRenderHeight() / 2 - h / 2, w, h},
+			(Vector2){0, 0}, 0.0f, WHITE);
+	} else {
+		DrawTexturePro(gpu_fb, 
+			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
+			(Rectangle){0, 0, GetRenderWidth(), GetRenderHeight()},
+			(Vector2){0, 0}, 0.0f, WHITE);
+	}
 	
 	/* ClearBackground(BLACK);
 	
@@ -312,7 +323,7 @@ void draw() {
 	DrawFPS(0, 0); 
 } 
 
-int main() {
+int main(void) {
 	FILE *fp = fopen("bios.bin", "r");
 	if (!fp) fp = fopen("bin/bios.bin", "r");
 	if (!fp) fp = fopen("/usr/share/r6502/bios.bin", "r");
