@@ -6,7 +6,7 @@
 reset:
 	lda #$00
 	sta z_tick
-	sta z_oam_size
+	sta z_scn
 	
 	;copy the tile data
 	jsr copy_tileset
@@ -16,10 +16,16 @@ reset:
 	
 	jsr copy_title
 	
+	jsr copy_pal
+	
 	lda #$C0
 	sta IO_VMX
 	lda #$E0
 	sta IO_VMY
+	
+	lda #%01000000
+	sta IO_ICTL
+	cli
 	
 @halt:
 	jmp @halt
@@ -85,19 +91,39 @@ copy_tilemap:
 @end:
 	rts
 
-
+copy_pal:
+	ldx #$00
+@loop:
+	lda default_pal,x
+	sta $C400,x
+	
+	inx
+	txa
+	cmp #$20
+	bne @loop
+	
+	rts
 
 nmi:
 	;inc IO_VMX
 	;inc IO_VMY
+	lda #$60
+	sta IO_VYC
+	lda #%10000000
+	sta IO_ICTL
+	
 	inc z_tick
+	inc $C402
 	rti
 
 irq:
+	inc $C402
 	rti
 
 .segment "DATA"
- 
+
+pal_cycle:
+	
 
 xenonstr_oam:
 	.byte $01, $3C, $70, $0A
@@ -106,12 +132,23 @@ xenonstr_oam:
 	.byte $01, $6c, $70, $0D
 	.byte $01, $7c, $70, $0C
 
+default_pal:
+	.byte $00, $e4, $ff, $ff
+	.byte $00, $00, $00, $00
+	.byte $00, $00, $00, $00
+	.byte $00, $00, $00, $00
+	
+	.byte $00, $e4, $e8, $ec
+	.byte $00, $00, $00, $00
+	.byte $00, $00, $00, $00
+	.byte $00, $00, $00, $00
+
 .include "graphics.s"
 
 .segment "BSS"
 
 z_tick: .res 1
-z_oam_size: .res 1
+z_scn: .res 1
 
 .segment "VEC"
 

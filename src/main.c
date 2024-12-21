@@ -16,7 +16,7 @@ int USE_LETTERBOX = 1;
 /* Bubblegum 16 Palette (lospec)
 Created by PineappleOnPizza
 */
-Color cpal[16] = {
+/*Color cpal[16] = {
 	(Color){0x16, 0x17, 0x1a, 0xFF},
 	(Color){0x7f, 0x06, 0x22, 0xFF},
 	(Color){0xd6, 0x24, 0x11, 0xFF},
@@ -52,19 +52,33 @@ Color opal[16] = {
 	(Color){0x10, 0xd2, 0x75, 0xFF},
 	(Color){0x00, 0x78, 0x99, 0xFF},
 	(Color){0x00, 0x28, 0x59, 0xFF}
-};
+};*/
 
 uint8_t ram[0xC000];
 uint8_t vram[0x2000];
 uint8_t bios[0x1000];
 uint8_t bus = 0xFF;
 
+uint8_t t_clock;
+
 uint8_t IO_TCNT;
 uint8_t IO_TCTL;
+/*
+--------
+*/
+
 uint8_t IO_TDIV;
 
 uint8_t IO_VCTL;
+/*
+--------
+*/
+
 uint8_t IO_VSTA;
+/*
+--------
+*/
+
 uint8_t IO_VMX;
 uint8_t IO_VMY;
 uint8_t IO_VY;
@@ -73,9 +87,22 @@ uint8_t IO_VWL;
 uint8_t IO_VWR;
 
 uint8_t IO_ICTL;
+/*
+An NMI is fired every VBLANK to give time for the CPU to update data on screen.
+As for the IRQ line, the CPU can select the desired interrupt source.
 
-Image fb;
-Texture gpu_fb;
+ys-----t
+
+y: Select VYC interrupt 
+s: Select Scanline interrupt
+t: Select Timer interrupt (when TCNT overflows)
+
+*/
+
+Image fb_b;
+Image fb_o;
+Texture gpu_fb_b;
+Texture gpu_fb_o;
 
 #define SCREEN_W 200
 #define SCREEN_H 150
@@ -95,6 +122,18 @@ typedef struct __attribute__((packed)) {
 	uint8_t y;
 	uint8_t c;
 } OAMEnt;
+
+Color cpal(int i) {
+	return (Color){((vram[0x400 + (i % 16)] & 0b11100000) >> 5 << 5),
+	               ((vram[0x400 + (i % 16)] & 0b00011100) >> 2 << 5),
+	               ((vram[0x400 + (i % 16)] & 0b00000011) >> 0 << 6), 0xff};
+}
+
+Color opal(int i) {
+	return (Color){((vram[0x410 + (i % 16)] & 0b11100000) >> 5 << 5),
+	               ((vram[0x410 + (i % 16)] & 0b00011100) >> 2 << 5),
+	               ((vram[0x410 + (i % 16)] & 0b00000011) >> 0 << 6), 0xff};
+}
 
 int get_tile_value(int t, int x, int y) {
 	return (
@@ -202,8 +241,9 @@ Color bg_pixel(uint8_t x, uint8_t y) {
 	uint8_t chry = y % 8;
 	
 	uint8_t tile = vram[0x800 + (tilex + tiley * 32)];
+	uint8_t attr = vram[0xC00 + (tilex + tiley * 32)];
 	
-	return cpal[get_tile_value(tile, chrx, chry) % 4];
+	return cpal(get_tile_value(tile, chrx, chry) % 4 + (attr % 4) * 4);
 }
 
 Color obj_pixel(uint8_t x, uint8_t y) {
@@ -213,8 +253,9 @@ Color obj_pixel(uint8_t x, uint8_t y) {
 		if ((x - oam[i].x) < 8 && (x - oam[i].x) >= 0 &&
 		    (y - oam[i].y) < 8 && (y - oam[i].y) >= 0) {
 			
-			return opal[get_tile_value(oam[i].c, x - oam[i].x, y - oam[i].y) + 0];
+			int v = get_tile_value(oam[i].c, x - oam[i].x, y - oam[i].y);
 			
+			return v ? opal(v + oam[i].pal * 4) : BLANK;
 		}
 	}
 	
@@ -222,11 +263,12 @@ Color obj_pixel(uint8_t x, uint8_t y) {
 }
 
 void render_pixel(int x, int y) {
-	ImageDrawPixel(&fb, x, y, bg_pixel(x, y));
+	
+	ImageDrawPixel(&fb_b, x, y, bg_pixel(x, y));
 	
 #ifdef GPU_ENABLE_SPRITES
 	Color op = obj_pixel(x, y); 
-	if (op.a) ImageDrawPixel(&fb, x, y, op);
+	ImageDrawPixel(&fb_o, x, y, op);
 #endif
 }
 
@@ -236,15 +278,37 @@ void render_scanline(int y) {
 	} 
 }
 
+void vyc_int() {
+	if (IO_VY == IO_VYC) m6502_irq(&cpu, TRUE);
+}
+
+void scn_int() {
+	m6502_irq(&cpu, TRUE);
+}
+
+void handle_scn() {
+	if (IO_ICTL & 0b10000000) vyc_int();
+	if (IO_ICTL & 0b01000000) scn_int();
+}
+
+void handle_tim() {
+	
+}
+
 void update(void) {
 	for (int y=0; y<SCREEN_H * 4 + VBLANK_SIZE; y++) {
 		if (y == SCREEN_H * 4) {
 			m6502_nmi(&cpu);
 		}
 		
+		handle_scn();
+		handle_tim();
+		
 		IO_VY = y / 4;
 		
 		cpu_cyc += m6502_run(&cpu, 264);
+		
+		m6502_irq(&cpu, FALSE);
 		
 		//printf("C%d\n", cpu_cyc);
 		
@@ -288,8 +352,12 @@ void update(void) {
 
 void draw(void) {
 	ClearBackground(BLACK);
-	if (IsTextureValid(gpu_fb)) UnloadTexture(gpu_fb);
-	gpu_fb = LoadTextureFromImage(fb);
+	
+	if (IsTextureValid(gpu_fb_b)) UnloadTexture(gpu_fb_b);
+	gpu_fb_b = LoadTextureFromImage(fb_b);
+	
+	if (IsTextureValid(gpu_fb_o)) UnloadTexture(gpu_fb_o);
+	gpu_fb_o = LoadTextureFromImage(fb_o);
 	
 	const int SCALE = fmin(GetRenderWidth() / SCREEN_W,
 	                       GetRenderHeight() / SCREEN_H);
@@ -298,13 +366,22 @@ void draw(void) {
 	const int h = 150 * SCALE;
 	
 	if (USE_LETTERBOX) {
-		DrawTexturePro(gpu_fb, 
+		DrawTexturePro(gpu_fb_b,
+			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
+			(Rectangle){GetRenderWidth()  / 2 - w / 2, 
+			            GetRenderHeight() / 2 - h / 2, w, h},
+			(Vector2){0, 0}, 0.0f, WHITE);
+		DrawTexturePro(gpu_fb_o,
 			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
 			(Rectangle){GetRenderWidth()  / 2 - w / 2, 
 			            GetRenderHeight() / 2 - h / 2, w, h},
 			(Vector2){0, 0}, 0.0f, WHITE);
 	} else {
-		DrawTexturePro(gpu_fb, 
+		DrawTexturePro(gpu_fb_b, 
+			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
+			(Rectangle){0, 0, GetRenderWidth(), GetRenderHeight()},
+			(Vector2){0, 0}, 0.0f, WHITE);
+		DrawTexturePro(gpu_fb_o, 
 			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
 			(Rectangle){0, 0, GetRenderWidth(), GetRenderHeight()},
 			(Vector2){0, 0}, 0.0f, WHITE);
@@ -364,7 +441,7 @@ int main(void) {
 	
 	InitWindow(SCREEN_W * 2, SCREEN_H * 2, "xenon");
 	SetWindowState(FLAG_WINDOW_RESIZABLE);
-	//SetTargetFPS(60);
+	SetTargetFPS(30);
 	
 	SetWindowMinSize(SCREEN_W, SCREEN_H);
 	
@@ -374,7 +451,8 @@ int main(void) {
 	m6502_power(&cpu, TRUE);
 	cpu.state.pc = cpu_read(NULL, 0xfffc) | (cpu_read(NULL, 0xfffd) << 8);
 	
-	fb = GenImageColor(SCREEN_W, SCREEN_H, BLANK);
+	fb_b = GenImageColor(SCREEN_W, SCREEN_H, BLANK);
+	fb_o = GenImageColor(SCREEN_W, SCREEN_H, BLANK);
 	
 	while (!WindowShouldClose()) {
 		BeginDrawing();
