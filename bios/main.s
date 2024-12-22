@@ -60,38 +60,69 @@ main_nmi:
 main_loadgame:
 	sei
 	
-	lda #'L'
-	sta IO_CON
+	store8 'L', IO_CON
 	
 	;make sure we don't get interrupted by an NMI
 	store16 h_null, nmi_h
 	store16 h_null, irq_h
 	
-	;enable interrupts
-	store16 @floppy_ok, irq_h
-	lda #%00000010
-	sta IO_ICTL
-	cli
-	
 	;init the FDC
 	lda #$04
 	sta IO_FCMD
+@init:
+	lda IO_FSTA
+	and #%10000000
+	bze @init
+	
+	lda #$02
+	sta z_sector
+	store16 w_disk_buf, z_addr
+	jsr read_sector
 	
 	jmp wait
 
 @floppy_ok:
-	lda #'O'
-	sta IO_CON
-	lda #'K'
-	sta IO_CON
-	lda #$0a
-	sta IO_CON
 	
 	
-	
-	cli
-	rti
-
+	jmp wait
 
 wait:
 	jmp wait
+
+read_sector:
+	pushall
+	sei
+	
+	lda #'_'
+	sta IO_CON
+	
+	;seek to location
+	lda z_sector
+	sta IO_FDAT
+	
+	lda #$01
+	sta IO_FCMD
+	
+@seek:
+	lda IO_FSTA
+	and #%00000100
+	bne @seek
+	
+	
+	lda #'S'
+	sta IO_CON
+	
+	;read the desired sector
+	
+	
+	lda z_sector
+	sta IO_FDAT
+	lda #$02
+	sta IO_FCMD
+@read:
+	jmp @read
+	
+@end:
+	cli
+	popall
+	rts

@@ -31,6 +31,11 @@
 	sta dest+1
 .endmacro
 
+.macro store8 src, dest
+	lda #src
+	sta dest
+.endmacro
+
 IO_CON  = $E000
 IO_TEST = $E001
 IO_JOY1 = $E002

@@ -148,13 +148,20 @@ default_pal:
 
 .include "graphics.s"
 
-.segment "BSS"
+.segment "ZP"
 
 z_tick: .res 1
 z_cyc: .res 1
 
 nmi_h: .res 2
 irq_h: .res 2
+
+z_sector: .res 1
+z_addr:   .res 2
+
+.segment "BSS"
+
+w_disk_buf: .res 512
 
 .segment "VEC"
 

@@ -8,6 +8,8 @@
 
 #include "font.h"
 
+uint8_t diskdata[0x20000];
+
 M6502 cpu;
 int cpu_cyc;
 
@@ -104,6 +106,7 @@ e: error code
 	2 = read error
 	3 = write error
 	4 = no disk
+	5 = busy
 	8 = OS error
 	
 	E = motor not on
@@ -137,7 +140,9 @@ bool fd_motor = false;
 int fd_err = 0;
 int fd_mode = 0;
 int fd_timer = 0; //used internally to simulate FDD delay
-
+int fd_pos   = 0;
+int fd_arg;
+int fd_idx;
 
 Image fb_b;
 Image fb_o;
@@ -165,10 +170,11 @@ typedef struct __attribute__((packed)) {
 
 typedef enum {
 	FDD_NULL  = 0, /* no regs */
-	FDD_SEEK  = 1, /* (FDR0 = lba address), (no result), irq when done */
+	FDD_SEEK  = 1, /* (FDAT = lba address), (no result), irq when done */
 	FDD_READ  = 2, /* sets disk in mode 6, data returned periodically with IRQs*/
 	FDD_WRITE = 3, /* sets disk in mode 7, data returned periodically with IRQs*/
 	FDD_INIT  = 4, /* turns on motor, irq when done */
+	FDD_TELL  = 5, /* read head position */
 } FloppyCMD;
 
 Color cpal(int i) {
@@ -191,6 +197,12 @@ int get_tile_value(int t, int x, int y) {
 }
 
 void fdd_process() {
+	if (fd_timer > 0) {
+		fd_err = 5;
+		m6502_irq(&cpu, TRUE);
+		return;
+	}
+	
 	switch (IO_FCMD) {
 		case FDD_NULL: break;
 		case FDD_SEEK:
@@ -199,12 +211,61 @@ void fdd_process() {
 				m6502_irq(&cpu, TRUE);
 				break;
 			}
+			
+			fd_err = 0;
+			fd_mode = 5;
+			fd_timer = 290 * abs(IO_FDAT - fd_pos);
 			break;
 		
 		case FDD_INIT:
+			fd_err = 0;
 			fd_mode = 4;
-			fd_timer = 35;
+			fd_timer = 4096;
 			break;
+		
+		case FDD_TELL:
+			IO_FDAT = fd_pos;
+			fd_err = 0;
+			break;
+		
+		case FDD_READ:
+			fd_idx = 0;
+			fd_mode = 6;
+			
+			break;
+			
+		default:
+			fd_err = 1;
+			break;
+	}
+}
+
+void fdd_cycle() {
+	if (fd_mode > 3) {
+		fd_timer--;
+		
+		if (fd_timer == 0) {
+			m6502_irq(&cpu, TRUE);
+			switch (fd_mode) {
+				case 4:
+					fd_motor = true;
+					break;
+				
+				case 5:
+					fd_pos = fd_arg;
+					break;
+			}
+			
+			fd_mode = 1;
+		}
+		
+		if (fd_mode == 6) {
+			IO_FDAT = diskdata[fd_idx++];
+			m6502_irq(&cpu, TRUE);
+			if (fd_idx == 512) {
+				fd_mode = 0;
+			}
+		}
 	}
 }
 
@@ -400,25 +461,8 @@ void render_pixel(int x, int y) {
 #endif
 }
 
-void fdd_cycle() {
-	if (fd_mode > 3) {
-		fd_timer--;
-		
-		if (fd_timer == 0) {
-			m6502_irq(&cpu, TRUE);
-			switch (fd_mode) {
-				case 1:
-					fd_motor = true;
-					break;
-			}
-			
-			fd_mode = 1;
-		}
-	}
-}
-
 void render_scanline(int y) {
-	for (int x=0; x<256; x++) {
+	for (int x=0; x<200; x++) {
 		render_pixel(x, y);
 	} 
 	
@@ -458,8 +502,14 @@ void update(void) {
 		
 		cpu_cyc += m6502_run(&cpu, 1);
 		m6502_irq(&cpu, FALSE);
-		cpu_cyc += m6502_run(&cpu, 263);
-		
+		cpu_cyc += m6502_run(&cpu, 64);
+		fdd_cycle();
+		cpu_cyc += m6502_run(&cpu, 64);
+		fdd_cycle();
+		cpu_cyc += m6502_run(&cpu, 64);
+		fdd_cycle();
+		cpu_cyc += m6502_run(&cpu, 64);
+		fdd_cycle();
 		
 		//printf("C%d\n", cpu_cyc);
 		
@@ -575,20 +625,33 @@ void draw(void) {
 	DrawFPS(0, 0); 
 } 
 
-int main(void) {
+int main(int argc, char **argv) {
 	FILE *fp = fopen("bios.bin", "r");
 	if (!fp) fp = fopen("bin/bios.bin", "r");
-	if (!fp) fp = fopen("/usr/share/r6502/bios.bin", "r");
+	if (!fp) fp = fopen("/usr/share/xenon/bios.bin", "r");
 	
 	if (!fp) {
 		printf("Unable to load BIOS file\n");
 		return 1;
 	}
 	
-	SetTraceLogLevel(10);
+	if (argc < 2) {
+		printf("usage: xenon <disk>\n");
+		return 1;
+	}
 	
 	fread(bios, 1, 0x1000, fp);
 	
+	fclose(fp);
+	fp = fopen(argv[1], "r");
+	if (!fp) {
+		perror(argv[1]);
+		return 1;
+	}
+	
+	fread(diskdata, 1, 0x20000, fp);
+	
+	SetTraceLogLevel(10);
 	InitWindow(SCREEN_W * 2, SCREEN_H * 2, "xenon");
 	SetWindowState(FLAG_WINDOW_RESIZABLE);
 	SetTargetFPS(60);

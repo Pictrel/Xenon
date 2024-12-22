@@ -44,6 +44,10 @@ int main(int argc, char **argv) {
 	if (config_lookup_string(&conf, "xe_auth", &s_value)) memcpy(disk + 0x0010, s_value, 4);
 	if (config_lookup_int(&conf, "xe_ver", &i_value)) disk[0x0014] = i_value;
 	if (config_lookup_int(&conf, "xe_reg", &i_value)) disk[0x0015] = i_value;
+	if (config_lookup_int(&conf, "xe_ent", &i_value)) {
+		disk[0x001C] = i_value;
+		disk[0x001D] = i_value >> 8;
+	}
 	
 	config_setting_t *files;
 	files = config_lookup(&conf, "files");

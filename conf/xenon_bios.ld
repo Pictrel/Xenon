@@ -1,6 +1,6 @@
 MEMORY {
 	RAM:  start = $0000, size = $C000;
-	VRAM: start = $C000, size = $0400;
+	VRAM: start = $C000, size = $2000;
 	
 	IO:   start = $E000, size = $1000;
 	BIOS: start = $F000, size = $1000;
@@ -11,5 +11,7 @@ SEGMENTS {
 	DATA:   load = BIOS, type = ro;
 	VEC:    load = BIOS, start = $fffa, type = overwrite;
 	
-	BSS:    load = RAM,  start = $0000, type = bss, define = yes;
+	ZP:     load = RAM,  start = $0000, type = bss, define = yes;
+	STACK:  load = RAM,  start = $0100, type = bss, define = yes;
+	BSS:    load = RAM,  start = $0200, type = bss, define = yes;
 }
