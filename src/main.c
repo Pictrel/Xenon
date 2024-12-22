@@ -89,14 +89,11 @@ uint8_t IO_VWR;
 
 uint8_t IO_FCTL;
 /*
-ec-----i
+--------
 
-e: activate motor
-c: command available
-i: enable floppy interrupt
 */
 
-uint8_t IO_FSTA;
+//uint8_t IO_FSTA;
 /*
 Oeeeemmm
 
@@ -107,12 +104,14 @@ e: error code
 	2 = read error
 	3 = write error
 	4 = no disk
+	8 = OS error
 	
 	E = motor not on
 	F = undefined error
 m: mode
 	0 = off
-	4 = idle
+	1 = idle
+	4 = initializing
 	5 = seeking
 	6 = reading
 	7 = writing
@@ -127,13 +126,18 @@ uint8_t IO_ICTL;
 An NMI is fired every VBLANK to give time for the CPU to update data on screen.
 As for the IRQ line, the CPU can select the desired interrupt source.
 
-ys----ft
+y-----ft
 
 y: Select VYC interrupt 
-s: Select Scanline interrupt
 t: Select Timer interrupt (when TCNT overflows)
 f: Select Floppy interrupt
 */
+
+bool fd_motor = false;
+int fd_err = 0;
+int fd_mode = 0;
+int fd_timer = 0; //used internally to simulate FDD delay
+
 
 Image fb_b;
 Image fb_o;
@@ -162,8 +166,9 @@ typedef struct __attribute__((packed)) {
 typedef enum {
 	FDD_NULL  = 0, /* no regs */
 	FDD_SEEK  = 1, /* (FDR0 = lba address), (no result), irq when done */
-	FDD_READ  = 2, /* sets disk in mode 6, data returned periodically*/
-	FDD_WRITE = 3, /* sets disk in mode 7, data returned periodically*/
+	FDD_READ  = 2, /* sets disk in mode 6, data returned periodically with IRQs*/
+	FDD_WRITE = 3, /* sets disk in mode 7, data returned periodically with IRQs*/
+	FDD_INIT  = 4, /* turns on motor, irq when done */
 } FloppyCMD;
 
 Color cpal(int i) {
@@ -183,6 +188,54 @@ int get_tile_value(int t, int x, int y) {
 			  ((vram[0x1000 + t * 16 + y]     >> (7-x)) & 1) + 
 			 (((vram[0x1000 + t * 16 + y + 8] >> (7-x)) & 1) << 1)
 		);
+}
+
+void fdd_process() {
+	switch (IO_FCMD) {
+		case FDD_NULL: break;
+		case FDD_SEEK:
+			if (!fd_motor) {
+				fd_err = 0xE;
+				m6502_irq(&cpu, TRUE);
+				break;
+			}
+			break;
+		
+		case FDD_INIT:
+			fd_mode = 4;
+			fd_timer = 35;
+			break;
+	}
+}
+
+uint8_t joy1() {
+	return (IsKeyDown(KEY_UP) << 0) |
+	       (IsKeyDown(KEY_DOWN) << 1) |
+	       (IsKeyDown(KEY_LEFT) << 2) |
+	       (IsKeyDown(KEY_RIGHT) << 3) |
+	       (IsKeyDown(KEY_Z) << 4) |
+	       (IsKeyDown(KEY_X) << 5) |
+	       (IsKeyDown(KEY_SPACE) << 6) |
+	       (IsKeyDown(KEY_ENTER) << 7); 
+}
+
+uint8_t joy2() {
+	return (IsKeyDown(KEY_I) << 0) |
+	       (IsKeyDown(KEY_K) << 1) |
+	       (IsKeyDown(KEY_J) << 2) |
+	       (IsKeyDown(KEY_L) << 3) |
+	       (IsKeyDown(KEY_A) << 4) |
+	       (IsKeyDown(KEY_S) << 5) |
+	       (IsKeyDown(KEY_Q) << 6) |
+	       (IsKeyDown(KEY_W) << 7); 
+}
+
+uint8_t get_FSTA() {
+	return ((fd_motor & 1) << 7) |
+	       ((fd_err & 15) << 3) |
+	       ((fd_mode & 7) << 0);
+	
+	//return fd_timer;
 }
 
 void cpu_iowrite(uint8_t addr, uint8_t val) {
@@ -207,19 +260,23 @@ void cpu_iowrite(uint8_t addr, uint8_t val) {
 		
 		case 0x80: IO_FCTL = bus; break;
 		//case 0x81: IO_FSTA = bus; break;
-		case 0x82: IO_FCMD = bus; break;
+		case 0x82: IO_FCMD = bus; fdd_process(); break;
 		case 0x83: IO_FDAT = bus; break;
 		
 		case 0xFF: IO_ICTL = bus; break;
 	}
 	
-	//printf("W io%02x: %02x\n", addr, bus);
+	if (addr != 0x17) {
+		//printf("W io%02x: %02x\n", addr, bus);
+	}
 }
 
 uint8_t cpu_ioread(uint8_t addr) {
 	
 	switch (addr) {
 		case 0x00: bus = getchar(); break;
+		case 0x02: bus = joy1(); break;
+		case 0x03: bus = joy2(); break;
 		case 0x04: bus = cpu_cyc; break;
 		case 0x05: bus = IO_TCNT; break;
 		case 0x06: bus = IO_TCTL; break;
@@ -236,10 +293,10 @@ uint8_t cpu_ioread(uint8_t addr) {
 		
 		case 0xFF: bus = IO_ICTL; break;
 		
-		case 0x80: IO_FCTL = bus; break;
-		//case 0x81: IO_FSTA = bus; break;
-		case 0x82: IO_FCMD = bus; break;
-		case 0x83: IO_FDAT = bus; break;
+		case 0x80: bus = IO_FCTL; break;
+		case 0x81: bus = get_FSTA(); break;
+		case 0x82: bus = IO_FCMD; break;
+		case 0x83: bus = IO_FDAT; break;
 	}
 	
 	//printf("R io%02x: %02x\n", addr, bus);
@@ -251,7 +308,7 @@ zuint8 cpu_read(void *ctx, zuint16 addr) {
 	if (     addr >= 0x0000 && addr <= 0xBFFF) bus = ram[addr % 0xC000];
 	else if (addr >= 0xC000 && addr <= 0xDFFF) {
 		bus = vram[addr % 0x2000];
-		printf("R %04x = %02x\n", addr, bus);
+		//printf("R %04x = %02x\n", addr, bus);
 	}
 	else if (addr >= 0xE000 && addr <= 0xEFFF) bus = cpu_ioread(addr & 0xFF);
 	else if (addr >= 0xF000 && addr <= 0xFFFF) bus = bios[addr % 0x1000];
@@ -265,7 +322,7 @@ void cpu_write(void *ctx, zuint16 addr, zuint8 val) {
 	if (     addr >= 0x0000 && addr <= 0xBFFF) ram[addr % 0xC000] = bus;
 	else if (addr >= 0xC000 && addr <= 0xDFFF) {
 		vram[addr % 0x2000] = bus;
-		printf("W %04x = %02x\n", addr, bus);
+		//printf("W %04x = %02x\n", addr, bus);
 	}
 	else if (addr >= 0xE000 && addr <= 0xEFFF) cpu_iowrite(addr & 0xFF, bus);
 	else if (addr >= 0xF000 && addr <= 0xFFFF) return; //u cant write to bios dummy
@@ -288,7 +345,6 @@ void DrawSprite(int col, int x, int y, int chr) {
 		}
 	}
 } */
-
 
 Color bg_pixel(uint8_t x, uint8_t y) {
 	x += IO_VMX;
@@ -344,24 +400,39 @@ void render_pixel(int x, int y) {
 #endif
 }
 
+void fdd_cycle() {
+	if (fd_mode > 3) {
+		fd_timer--;
+		
+		if (fd_timer == 0) {
+			m6502_irq(&cpu, TRUE);
+			switch (fd_mode) {
+				case 1:
+					fd_motor = true;
+					break;
+			}
+			
+			fd_mode = 1;
+		}
+	}
+}
+
 void render_scanline(int y) {
 	for (int x=0; x<256; x++) {
 		render_pixel(x, y);
 	} 
+	
+	fdd_cycle();
 }
 
 void vyc_int() {
 	if (IO_VY == IO_VYC) {
 		m6502_irq(&cpu, TRUE);
 		irq_triggered = true;
-		printf("%02x %02x %c%c\n", IO_VY, IO_VYC, (IO_VY > SCREEN_H) ? 'V' : 'D',
-		                                          irq_triggered ? '!' : ' ');
+		/*printf("%02x %02x %c%c\n", IO_VY, IO_VYC, (IO_VY > SCREEN_H) ? 'V' : 'D',
+		                                          irq_triggered ? '!' : ' ');*/
 	}
 	
-}
-
-void scn_int() {
-	m6502_irq(&cpu, TRUE);
 }
 
 void handle_scn() {
@@ -369,10 +440,6 @@ void handle_scn() {
 }
 
 void handle_tim() {
-	
-}
-
-void fdd_cycle() {
 	
 }
 
@@ -385,15 +452,13 @@ void update(void) {
 		irq_triggered = false;
 		
 		IO_VY = y;
-		vyc_int();
+		handle_scn();
 		
 		render_scanline(IO_VY);
 		
 		cpu_cyc += m6502_run(&cpu, 1);
 		m6502_irq(&cpu, FALSE);
 		cpu_cyc += m6502_run(&cpu, 263);
-		
-		fdd_cycle();
 		
 		
 		//printf("C%d\n", cpu_cyc);

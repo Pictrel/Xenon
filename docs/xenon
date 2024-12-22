@@ -1,0 +1,32 @@
+START	SIZE	NAME		VALUE
+
+SECTOR 00:
+0000	4	XE_HEAD		"XEN6"
+0004	12	XE_NAME		<game name>
+0010	4	XE_AUTH		<game author>
+0014	1	XE_VER		<game version>
+0015	1	XE_REG		<game region>
+0016	1	XE_BOOT		<game boot file>
+0018	4	XE_DATE		<unix epoch of disk build>
+001C	2	XE_ENT		<entry address>
+
+01FE	2	XE_SUM		<checksum of sector>
+
+SECTOR 01:
+0200	16	XE_NODE		<file table entry>
+0208	16	XE_NODE		<file table entry>
+0210	16	XE_NODE		<file table entry>
+... (32x XE_NODE)
+
+
+
+FILE TABLE ENTRY:
+00	1	FI_HEAD		"F"
+01	1	FI_ID		<file ID>
+02	1	FI_SECT		<file sector start>
+03	1	FI_LEN		<file sector no.>
+04	2	FI_ADDR		<file address>
+06	2	FI_SUM		<file checksum>
+08	8	FI_NAME		<file name>
+
+Each file address is

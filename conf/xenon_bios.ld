@@ -11,7 +11,5 @@ SEGMENTS {
 	DATA:   load = BIOS, type = ro;
 	VEC:    load = BIOS, start = $fffa, type = overwrite;
 	
-	BSS:    load = RAM,  start = $0200, type = bss, define = yes;
-	ZPAGE:  load = RAM,  start = $0000, type = bss, define = yes;
-	STACK:  load = RAM,  start = $0100, type = bss, define = yes;
+	BSS:    load = RAM,  start = $0000, type = bss, define = yes;
 }

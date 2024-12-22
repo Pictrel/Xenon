@@ -24,6 +24,13 @@
 	pla
 .endmacro
 
+.macro store16 src, dest
+	lda #.lobyte(src)
+	sta dest
+	lda #.hibyte(src)
+	sta dest+1
+.endmacro
+
 IO_CON  = $E000
 IO_TEST = $E001
 IO_JOY1 = $E002
@@ -46,10 +53,19 @@ IO_VWR  = $E019
 
 IO_FCTL = $E080
 IO_FSTA = $E081
-IO_FCMD = $E083
-IO_FDAT = $E084
+IO_FCMD = $E082
+IO_FDAT = $E083
 
 IO_ICTL = $E0FF
+
+BTN_UP     = %00000001
+BTN_DOWN   = %00000010
+BTN_LEFT   = %00000100
+BTN_RIGHT  = %00001000
+BTN_A      = %00010000
+BTN_B      = %00100000
+BTN_SELECT = %01000000
+BTN_START  = %10000000
 
 VRAM_START   = $C000
 VRAM_OAM     = $C000

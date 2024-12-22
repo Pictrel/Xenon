@@ -4,6 +4,7 @@
 .segment "CODE"
 
 reset:
+	sei
 	lda #$00
 	sta z_tick
 	sta z_cyc
@@ -22,6 +23,9 @@ reset:
 	sta IO_VMX
 	lda #$E0
 	sta IO_VMY
+	
+	store16 main_nmi, nmi_h
+	store16 main_irq, irq_h
 	
 	lda #%01000000
 	sta IO_ICTL
@@ -105,58 +109,15 @@ copy_pal:
 	rts
 
 nmi:
-	pushall
-	sei
-	
-	;inc IO_VMX
-	;inc IO_VMY
-	lda #$18
-	sta IO_VYC
-	lda #%10000000
-	sta IO_ICTL
-	
-	lda #$FC
-	sta $C402
-	
-	inc z_tick
-	;inc $C402
-	
-	lda z_tick
-	lsr
-	lsr
-	sta z_cyc
-	
-	cli
-	popall
-	rti
+	jmp (nmi_h)
 
 irq:
-	sei
-	
-	ldx z_cyc
-	lda pal_cycle,x
-	sta $C402
-	
-	ldx z_cyc
-	inx
-	txa
-@mod_loop:
-	cmp #32
-	blt @mod_end
-	sub #32
-	jmp @mod_loop
-@mod_end:
-	sta  z_cyc
-	
-	;lda IO_VYC
-	lda IO_VYC
-	add #8
-	sta IO_VYC
+	jmp (irq_h)
 
-@end:
-	
-	cli
+h_null:
 	rti
+
+.include "main.s"
 
 .segment "DATA"
 
@@ -191,6 +152,9 @@ default_pal:
 
 z_tick: .res 1
 z_cyc: .res 1
+
+nmi_h: .res 2
+irq_h: .res 2
 
 .segment "VEC"
 
