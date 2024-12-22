@@ -6,7 +6,7 @@
 reset:
 	lda #$00
 	sta z_tick
-	sta z_scn
+	sta z_cyc
 	
 	;copy the tile data
 	jsr copy_tileset
@@ -105,24 +105,66 @@ copy_pal:
 	rts
 
 nmi:
+	pushall
+	sei
+	
 	;inc IO_VMX
 	;inc IO_VMY
-	lda #$60
+	lda #$18
 	sta IO_VYC
 	lda #%10000000
 	sta IO_ICTL
 	
+	lda #$FC
+	sta $C402
+	
 	inc z_tick
-	inc $C402
+	;inc $C402
+	
+	lda z_tick
+	lsr
+	lsr
+	sta z_cyc
+	
+	cli
+	popall
 	rti
 
 irq:
-	inc $C402
+	sei
+	
+	ldx z_cyc
+	lda pal_cycle,x
+	sta $C402
+	
+	ldx z_cyc
+	inx
+	txa
+@mod_loop:
+	cmp #32
+	blt @mod_end
+	sub #32
+	jmp @mod_loop
+@mod_end:
+	sta  z_cyc
+	
+	;lda IO_VYC
+	lda IO_VYC
+	add #8
+	sta IO_VYC
+
+@end:
+	
+	cli
 	rti
 
 .segment "DATA"
 
 pal_cycle:
+	.byte $E0, $E4, $E8, $EC, $F0, $F4, $F8, $FC
+	.byte $DC, $BC, $9C, $7C, $5C, $3C, $1C, $1D 
+	.byte $1E, $1F, $1B, $17, $13, $0F, $0B, $07 
+	.byte $03, $23, $43, $63, $83, $A3, $C3, $E3
 	
 
 xenonstr_oam:
@@ -148,7 +190,7 @@ default_pal:
 .segment "BSS"
 
 z_tick: .res 1
-z_scn: .res 1
+z_cyc: .res 1
 
 .segment "VEC"
 

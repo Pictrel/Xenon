@@ -11,6 +11,7 @@
 M6502 cpu;
 int cpu_cyc;
 
+bool irq_triggered;
 int USE_LETTERBOX = 1;
 
 /* Bubblegum 16 Palette (lospec)
@@ -86,17 +87,52 @@ uint8_t IO_VYC;
 uint8_t IO_VWL;
 uint8_t IO_VWR;
 
+uint8_t IO_FCTL;
+/*
+ec-----i
+
+e: activate motor
+c: command available
+i: enable floppy interrupt
+*/
+
+uint8_t IO_FSTA;
+/*
+Oeeeemmm
+
+O: motor on
+e: error code
+	0 = OK
+	1 = invalid command
+	2 = read error
+	3 = write error
+	4 = no disk
+	
+	E = motor not on
+	F = undefined error
+m: mode
+	0 = off
+	4 = idle
+	5 = seeking
+	6 = reading
+	7 = writing
+*/
+
+uint8_t IO_FDAT;
+
+uint8_t IO_FCMD;
+
 uint8_t IO_ICTL;
 /*
 An NMI is fired every VBLANK to give time for the CPU to update data on screen.
 As for the IRQ line, the CPU can select the desired interrupt source.
 
-ys-----t
+ys----ft
 
 y: Select VYC interrupt 
 s: Select Scanline interrupt
 t: Select Timer interrupt (when TCNT overflows)
-
+f: Select Floppy interrupt
 */
 
 Image fb_b;
@@ -122,6 +158,13 @@ typedef struct __attribute__((packed)) {
 	uint8_t y;
 	uint8_t c;
 } OAMEnt;
+
+typedef enum {
+	FDD_NULL  = 0, /* no regs */
+	FDD_SEEK  = 1, /* (FDR0 = lba address), (no result), irq when done */
+	FDD_READ  = 2, /* sets disk in mode 6, data returned periodically*/
+	FDD_WRITE = 3, /* sets disk in mode 7, data returned periodically*/
+} FloppyCMD;
 
 Color cpal(int i) {
 	return (Color){((vram[0x400 + (i % 16)] & 0b11100000) >> 5 << 5),
@@ -149,19 +192,28 @@ void cpu_iowrite(uint8_t addr, uint8_t val) {
 		case 0x00: putchar(bus); fflush(stdout); break;
 		
 		//case 0x04: cpy_cyc = bus; break;
-		case 0x05: IO_TCNT = bus; break;
+		//case 0x05: IO_TCNT = bus; break;
 		case 0x06: IO_TCTL = bus; break;
 		case 0x07: IO_TDIV = bus; break;
 		
 		case 0x10: IO_VCTL = bus; break;
-		case 0x11: IO_VSTA = bus; break;
+		//case 0x11: IO_VSTA = bus; break;
 		case 0x14: IO_VMX = bus; break;
 		case 0x15: IO_VMY = bus; break;
 		case 0x16: IO_VY = bus; break;
 		case 0x17: IO_VYC = bus; break;
 		case 0x18: IO_VWL = bus; break;
 		case 0x19: IO_VWR = bus; break;
+		
+		case 0x80: IO_FCTL = bus; break;
+		//case 0x81: IO_FSTA = bus; break;
+		case 0x82: IO_FCMD = bus; break;
+		case 0x83: IO_FDAT = bus; break;
+		
+		case 0xFF: IO_ICTL = bus; break;
 	}
+	
+	//printf("W io%02x: %02x\n", addr, bus);
 }
 
 uint8_t cpu_ioread(uint8_t addr) {
@@ -183,16 +235,24 @@ uint8_t cpu_ioread(uint8_t addr) {
 		case 0x19: bus = IO_VWR; break;
 		
 		case 0xFF: bus = IO_ICTL; break;
+		
+		case 0x80: IO_FCTL = bus; break;
+		//case 0x81: IO_FSTA = bus; break;
+		case 0x82: IO_FCMD = bus; break;
+		case 0x83: IO_FDAT = bus; break;
 	}
 	
-	printf("R io%02x: %02x\n", addr, bus);
+	//printf("R io%02x: %02x\n", addr, bus);
 	
 	return bus;
 }
 
 zuint8 cpu_read(void *ctx, zuint16 addr) {
 	if (     addr >= 0x0000 && addr <= 0xBFFF) bus = ram[addr % 0xC000];
-	else if (addr >= 0xC000 && addr <= 0xDFFF) bus = vram[addr % 0x2000];
+	else if (addr >= 0xC000 && addr <= 0xDFFF) {
+		bus = vram[addr % 0x2000];
+		printf("R %04x = %02x\n", addr, bus);
+	}
 	else if (addr >= 0xE000 && addr <= 0xEFFF) bus = cpu_ioread(addr & 0xFF);
 	else if (addr >= 0xF000 && addr <= 0xFFFF) bus = bios[addr % 0x1000];
 	
@@ -203,7 +263,10 @@ void cpu_write(void *ctx, zuint16 addr, zuint8 val) {
 	bus = val;
 	
 	if (     addr >= 0x0000 && addr <= 0xBFFF) ram[addr % 0xC000] = bus;
-	else if (addr >= 0xC000 && addr <= 0xDFFF) vram[addr % 0x2000] = bus;
+	else if (addr >= 0xC000 && addr <= 0xDFFF) {
+		vram[addr % 0x2000] = bus;
+		printf("W %04x = %02x\n", addr, bus);
+	}
 	else if (addr >= 0xE000 && addr <= 0xEFFF) cpu_iowrite(addr & 0xFF, bus);
 	else if (addr >= 0xF000 && addr <= 0xFFFF) return; //u cant write to bios dummy
 }
@@ -264,11 +327,20 @@ Color obj_pixel(uint8_t x, uint8_t y) {
 
 void render_pixel(int x, int y) {
 	
+	
 	ImageDrawPixel(&fb_b, x, y, bg_pixel(x, y));
 	
 #ifdef GPU_ENABLE_SPRITES
 	Color op = obj_pixel(x, y); 
 	ImageDrawPixel(&fb_o, x, y, op);
+#endif
+
+#ifdef GPU_DEBUG
+	
+	if (IO_VY == IO_VYC && x < 8) {
+		//printf("%02x %02x\n", IO_VY, IO_VYC);
+		ImageDrawPixel(&fb_b, x, y, YELLOW);
+	}
 #endif
 }
 
@@ -279,7 +351,13 @@ void render_scanline(int y) {
 }
 
 void vyc_int() {
-	if (IO_VY == IO_VYC) m6502_irq(&cpu, TRUE);
+	if (IO_VY == IO_VYC) {
+		m6502_irq(&cpu, TRUE);
+		irq_triggered = true;
+		printf("%02x %02x %c%c\n", IO_VY, IO_VYC, (IO_VY > SCREEN_H) ? 'V' : 'D',
+		                                          irq_triggered ? '!' : ' ');
+	}
+	
 }
 
 void scn_int() {
@@ -288,31 +366,38 @@ void scn_int() {
 
 void handle_scn() {
 	if (IO_ICTL & 0b10000000) vyc_int();
-	if (IO_ICTL & 0b01000000) scn_int();
 }
 
 void handle_tim() {
 	
 }
 
+void fdd_cycle() {
+	
+}
+
 void update(void) {
-	for (int y=0; y<SCREEN_H * 4 + VBLANK_SIZE; y++) {
-		if (y == SCREEN_H * 4) {
+	for (int y=0; y<SCREEN_H + VBLANK_SIZE / 4; y++) {
+		if (y == SCREEN_H) {
 			m6502_nmi(&cpu);
 		}
 		
-		handle_scn();
-		handle_tim();
+		irq_triggered = false;
 		
-		IO_VY = y / 4;
+		IO_VY = y;
+		vyc_int();
 		
-		cpu_cyc += m6502_run(&cpu, 264);
+		render_scanline(IO_VY);
 		
+		cpu_cyc += m6502_run(&cpu, 1);
 		m6502_irq(&cpu, FALSE);
+		cpu_cyc += m6502_run(&cpu, 263);
+		
+		fdd_cycle();
+		
 		
 		//printf("C%d\n", cpu_cyc);
 		
-		render_scanline(IO_VY);
 	}
 }
 
@@ -441,7 +526,7 @@ int main(void) {
 	
 	InitWindow(SCREEN_W * 2, SCREEN_H * 2, "xenon");
 	SetWindowState(FLAG_WINDOW_RESIZABLE);
-	SetTargetFPS(30);
+	SetTargetFPS(60);
 	
 	SetWindowMinSize(SCREEN_W, SCREEN_H);
 	
