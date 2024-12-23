@@ -136,6 +136,18 @@ t: Select Timer interrupt (when TCNT overflows)
 f: Select Floppy interrupt
 */
 
+//uint8_t IO_ISTA;
+/*
+When an interrupt is fired, this register is set depending on the source.
+
+-----sss
+
+S:
+	0 = timer interrupt
+	1 = floppy interrupt
+	7 = vyc interrupt
+*/
+
 bool fd_motor = false;
 int fd_err = 0;
 int fd_mode = 0;
@@ -143,6 +155,8 @@ int fd_timer = 0; //used internally to simulate FDD delay
 int fd_pos   = 0;
 int fd_arg;
 int fd_idx;
+
+int irq_source;
 
 Image fb_b;
 Image fb_o;
@@ -197,8 +211,9 @@ int get_tile_value(int t, int x, int y) {
 }
 
 void fdd_process() {
-	if (fd_timer > 0) {
+	if (fd_mode > 3) {
 		fd_err = 5;
+		irq_source = 1;
 		m6502_irq(&cpu, TRUE);
 		return;
 	}
@@ -208,19 +223,21 @@ void fdd_process() {
 		case FDD_SEEK:
 			if (!fd_motor) {
 				fd_err = 0xE;
+				irq_source = 1;
 				m6502_irq(&cpu, TRUE);
 				break;
 			}
 			
+			fd_arg = IO_FDAT;
 			fd_err = 0;
 			fd_mode = 5;
-			fd_timer = 290 * abs(IO_FDAT - fd_pos);
+			fd_timer = 230 * (abs(IO_FDAT - fd_pos) + 120);
 			break;
 		
 		case FDD_INIT:
 			fd_err = 0;
 			fd_mode = 4;
-			fd_timer = 4096;
+			fd_timer = 40960;
 			break;
 		
 		case FDD_TELL:
@@ -231,7 +248,6 @@ void fdd_process() {
 		case FDD_READ:
 			fd_idx = 0;
 			fd_mode = 6;
-			
 			break;
 			
 		default:
@@ -245,6 +261,7 @@ void fdd_cycle() {
 		fd_timer--;
 		
 		if (fd_timer == 0) {
+			irq_source = 1;
 			m6502_irq(&cpu, TRUE);
 			switch (fd_mode) {
 				case 4:
@@ -260,10 +277,12 @@ void fdd_cycle() {
 		}
 		
 		if (fd_mode == 6) {
-			IO_FDAT = diskdata[fd_idx++];
+			//printf("%02x\n", fd_idx);
+			IO_FDAT = diskdata[fd_pos * 512 + (fd_idx++)];
+			irq_source = 1;
 			m6502_irq(&cpu, TRUE);
-			if (fd_idx == 512) {
-				fd_mode = 0;
+			if (fd_idx > 511) {
+				fd_mode = 1;
 			}
 		}
 	}
@@ -299,6 +318,10 @@ uint8_t get_FSTA() {
 	//return fd_timer;
 }
 
+uint8_t get_ISTA() {
+	
+}
+
 void cpu_iowrite(uint8_t addr, uint8_t val) {
 	bus = val;
 	
@@ -324,6 +347,7 @@ void cpu_iowrite(uint8_t addr, uint8_t val) {
 		case 0x82: IO_FCMD = bus; fdd_process(); break;
 		case 0x83: IO_FDAT = bus; break;
 		
+		//case 0xFE: IO_ISTA = bus; break;
 		case 0xFF: IO_ICTL = bus; break;
 	}
 	
@@ -352,6 +376,7 @@ uint8_t cpu_ioread(uint8_t addr) {
 		case 0x18: bus = IO_VWL; break;
 		case 0x19: bus = IO_VWR; break;
 		
+		case 0xFE: bus = get_ISTA(); break;
 		case 0xFF: bus = IO_ICTL; break;
 		
 		case 0x80: bus = IO_FCTL; break;
@@ -471,8 +496,8 @@ void render_scanline(int y) {
 
 void vyc_int() {
 	if (IO_VY == IO_VYC) {
+		irq_source = 0;
 		m6502_irq(&cpu, TRUE);
-		irq_triggered = true;
 		/*printf("%02x %02x %c%c\n", IO_VY, IO_VYC, (IO_VY > SCREEN_H) ? 'V' : 'D',
 		                                          irq_triggered ? '!' : ' ');*/
 	}
@@ -480,6 +505,7 @@ void vyc_int() {
 }
 
 void handle_scn() {
+	//printf("%02x\n", IO_ICTL);
 	if (IO_ICTL & 0b10000000) vyc_int();
 }
 
@@ -502,17 +528,48 @@ void update(void) {
 		
 		cpu_cyc += m6502_run(&cpu, 1);
 		m6502_irq(&cpu, FALSE);
-		cpu_cyc += m6502_run(&cpu, 64);
+		cpu_cyc += m6502_run(&cpu, 63);
+		
 		fdd_cycle();
-		cpu_cyc += m6502_run(&cpu, 64);
+		cpu_cyc += m6502_run(&cpu, 1);
+		m6502_irq(&cpu, FALSE);
+		cpu_cyc += m6502_run(&cpu, 63);
+		
 		fdd_cycle();
-		cpu_cyc += m6502_run(&cpu, 64);
+		cpu_cyc += m6502_run(&cpu, 1);
+		m6502_irq(&cpu, FALSE);
+		cpu_cyc += m6502_run(&cpu, 63);
+		
 		fdd_cycle();
-		cpu_cyc += m6502_run(&cpu, 64);
-		fdd_cycle();
+		cpu_cyc += m6502_run(&cpu, 1);
+		m6502_irq(&cpu, FALSE);
+		cpu_cyc += m6502_run(&cpu, 63);
 		
 		//printf("C%d\n", cpu_cyc);
 		
+	}
+	
+	if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+		printf("? ");
+		
+		uint16_t addr;
+		scanf("%x", &addr);
+		
+		for (int y=0; y<16; y++) {
+			for (int x=0; x<16; x++) {
+				printf("%02x ", cpu_read(NULL, addr + x + y * 16));
+				if ((x % 8) == 7) printf(" ");
+			}
+			
+			printf("| ");
+			for (int x=0; x<16; x++) {
+				uint8_t n = cpu_read(NULL, addr + x + y * 16);
+				printf("%c", (n > 0x1f && n < 0x80) ? n : '.');
+				if ((x % 8) == 7) printf(" ");
+			}
+			
+			printf(" |\n");
+		}
 	}
 }
 
