@@ -29,6 +29,4 @@ FILE TABLE ENTRY:
 06	2	FI_SUM		<file checksum>
 08	8	FI_NAME		<file name>
 
-Each file address is
-
 
