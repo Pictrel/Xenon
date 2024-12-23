@@ -191,6 +191,12 @@ typedef enum {
 	FDD_TELL  = 5, /* read head position */
 } FloppyCMD;
 
+
+
+
+
+
+
 Color cpal(int i) {
 	return (Color){((vram[0x400 + (i % 16)] & 0b11100000) >> 5 << 5),
 	               ((vram[0x400 + (i % 16)] & 0b00011100) >> 2 << 5),
@@ -203,12 +209,23 @@ Color opal(int i) {
 	               ((vram[0x410 + (i % 16)] & 0b00000011) >> 0 << 6), 0xff};
 }
 
+
+
+
+
+
+
 int get_tile_value(int t, int x, int y) {
 	return (
 			  ((vram[0x1000 + t * 16 + y]     >> (7-x)) & 1) + 
 			 (((vram[0x1000 + t * 16 + y + 8] >> (7-x)) & 1) << 1)
 		);
 }
+
+
+
+
+
 
 void fdd_process() {
 	if (fd_mode > 3) {
@@ -288,6 +305,13 @@ void fdd_cycle() {
 	}
 }
 
+
+
+
+
+
+
+
 uint8_t joy1() {
 	return (IsKeyDown(KEY_UP) << 0) |
 	       (IsKeyDown(KEY_DOWN) << 1) |
@@ -310,6 +334,11 @@ uint8_t joy2() {
 	       (IsKeyDown(KEY_W) << 7); 
 }
 
+
+
+
+
+
 uint8_t get_FSTA() {
 	return ((fd_motor & 1) << 7) |
 	       ((fd_err & 15) << 3) |
@@ -321,6 +350,10 @@ uint8_t get_FSTA() {
 uint8_t get_ISTA() {
 	
 }
+
+
+
+
 
 void cpu_iowrite(uint8_t addr, uint8_t val) {
 	bus = val;
@@ -356,6 +389,10 @@ void cpu_iowrite(uint8_t addr, uint8_t val) {
 	}
 }
 
+
+
+
+
 uint8_t cpu_ioread(uint8_t addr) {
 	
 	switch (addr) {
@@ -390,6 +427,11 @@ uint8_t cpu_ioread(uint8_t addr) {
 	return bus;
 }
 
+
+
+
+
+
 zuint8 cpu_read(void *ctx, zuint16 addr) {
 	if (     addr >= 0x0000 && addr <= 0xBFFF) bus = ram[addr % 0xC000];
 	else if (addr >= 0xC000 && addr <= 0xDFFF) {
@@ -402,6 +444,11 @@ zuint8 cpu_read(void *ctx, zuint16 addr) {
 	return bus;
 }
 
+
+
+
+
+
 void cpu_write(void *ctx, zuint16 addr, zuint8 val) {
 	bus = val;
 	
@@ -413,6 +460,10 @@ void cpu_write(void *ctx, zuint16 addr, zuint8 val) {
 	else if (addr >= 0xE000 && addr <= 0xEFFF) cpu_iowrite(addr & 0xFF, bus);
 	else if (addr >= 0xF000 && addr <= 0xFFFF) return; //u cant write to bios dummy
 }
+
+
+
+
 
 /* void DrawTile(int col, int x, int y, int chr) {
 	for (int i=0; i<8; i++) {
@@ -431,6 +482,10 @@ void DrawSprite(int col, int x, int y, int chr) {
 		}
 	}
 } */
+
+
+
+
 
 Color bg_pixel(uint8_t x, uint8_t y) {
 	x += IO_VMX;
@@ -451,6 +506,10 @@ Color bg_pixel(uint8_t x, uint8_t y) {
 	return cpal(get_tile_value(tile, chrx, chry) % 4 + (attr % 4) * 4);
 }
 
+
+
+
+
 Color obj_pixel(uint8_t x, uint8_t y) {
 	OAMEnt *oam = (OAMEnt*)vram;
 	
@@ -466,6 +525,12 @@ Color obj_pixel(uint8_t x, uint8_t y) {
 	
 	return BLANK;
 }
+
+
+
+
+
+
 
 void render_pixel(int x, int y) {
 	
@@ -681,6 +746,12 @@ void draw(void) {
 	
 	DrawFPS(0, 0); 
 } 
+
+
+
+
+
+
 
 int main(int argc, char **argv) {
 	FILE *fp = fopen("bios.bin", "r");

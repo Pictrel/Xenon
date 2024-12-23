@@ -23,6 +23,11 @@ main_irq:
 	rti
 
 
+
+
+
+
+
 main_nmi:
 	pushall
 	sei
@@ -57,6 +62,13 @@ main_nmi:
 	popall
 	rti
 
+
+
+
+
+
+
+
 main_loadgame:
 	sei
 	
@@ -76,7 +88,7 @@ main_loadgame:
 	
 	;load sector 0
 	lda #$00
-	sta z_sector
+	sta z_arg
 	store16 w_disk_buf, z_addr
 	jsr read_sector
 	
@@ -85,7 +97,7 @@ main_loadgame:
 @compare_loop:
 	lda w_disk_buf,x
 	cmp file_header,x
-	bne @not_valid
+	bne @not_valid_disk
 	inx
 	cpx #4
 	bne @compare_loop
@@ -101,47 +113,175 @@ main_loadgame:
 	lda w_disk_buf+$1d
 	sta xe_entry+1
 	
+	;find the boot file
+	lda xe_boot
+	sta z_arg
+	jsr get_file
 	
+	lda z_result
+	cmp #$ff
+	beq @no_boot_file
 	
-@find_loop_inx:
+	;we have a boot file!
+	lda #$0f
+	sta VRAM_OAM+7
+	
+	;load it
+	lda z_result
+	sta z_arg
+	jsr load_file
 	
 	jmp wait
 	
-@not_valid:
+@not_valid_disk:
 	lda #$0e
 	sta VRAM_OAM+3
+	jmp wait
+
+@no_boot_file:
+	lda #$0e
+	sta VRAM_OAM+7
 	jmp wait
 	
 wait:
 	jmp wait
 
-
 file_header: .byte "XEN6"
 
 
 
-get_file:
+
+
+
+
+
+
+;z_arg = filetable index
+load_file:
+	pushall
+	
+	ldy z_arg
+	
 	;load sector 1
 	lda #$01
-	sta z_sector
+	sta z_arg
 	store16 w_disk_buf, z_addr
 	jsr read_sector
 	
+	sty z_arg
+	
+	;figure out sector start (z_arg)
+	lda z_arg
+	add #2
+	tax
+	
+	lda w_disk_buf,x
+	sta z_arg
+	
+	;and the sector length (y)
+	inx
+	ldy w_disk_buf,x
+	
+	;then, the destination address
+	inx
+	lda w_disk_buf,x
+	sta z_addr
+	inx
+	lda w_disk_buf,x
+	sta z_addr+1
+	
+	;read the sectors
+	ldx z_arg
+@loop: 
+	stx z_arg
+	jsr read_sector
+	;the address has already been incremented, no need to modify it
+	inx
+	dey
+	bnz @loop
+	
+	;run at the entry point
+	jmp (xe_entry)
+	
+@end:
+	popall
+	rts
+	
+
+
+
+
+
+
+;z_arg = file id
+;z_result = $ff (file not found)
+;           <filetable index> (found)
+get_file:
+	pushall
+	
+	ldy z_arg
+	
+	;load sector 1
+	lda #$01
+	sta z_arg
+	store16 w_disk_buf, z_addr
+	jsr read_sector
+	
+	sty z_arg
+	
 	;loop over every file until we find the bootfile
 	ldx #$00
-find_loop:
+@loop:
+	
+	;fi_head
 	lda w_disk_buf,x
 	cmp #'F'
-	bne @find_loop_invalid_file
+	bne @invalid
 	
 	lda #'F'
 	sta IO_CON
-	jmp @find_loop
 	
-@find_loop_invalid_file:
-	lda #'I'
+	;fi_id
+	inx
+	lda w_disk_buf,x
+	cmp z_arg
+	beq @found
+	
+	;not found yet
+	
+@next_file:
+	
+	;increment X to next 16-byte aligned boundary
+	txa
+	add #15
+	tax
+	jmp @loop
+	
+@invalid:
+	lda #'i'
 	sta IO_CON
-	jmp @find_loop_inx
+	
+	lda #$ff
+	sta z_result
+	
+	popall
+	rts
+	
+@found:
+	lda #'='
+	sta IO_CON
+	
+	dex
+	stx z_result
+	
+	popall
+	rts
+
+
+
+
+
+
 
 
 
@@ -153,7 +293,7 @@ read_sector:
 	sta IO_CON
 	
 	;seek to location
-	lda z_sector
+	lda z_arg
 	sta IO_FDAT
 	
 	lda #$01
@@ -182,7 +322,7 @@ read_sector:
 	;read the desired sector
 	ldy #$00
 	
-	lda z_sector
+	lda z_arg
 	sta IO_FDAT
 	lda #$02
 	sta IO_FCMD

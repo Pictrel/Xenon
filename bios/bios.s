@@ -36,6 +36,11 @@ reset:
 
 
 
+
+
+
+
+
 copy_title:
 	ldx #$00
 	
@@ -52,6 +57,10 @@ copy_title:
 
 
 
+
+
+
+
 copy_tileset:
 	ldx #$00
 @loop:
@@ -60,6 +69,10 @@ copy_tileset:
 	inx
 	bne @loop
 	rts
+
+
+
+
 
 
 
@@ -95,6 +108,12 @@ copy_tilemap:
 @end:
 	rts
 
+
+
+
+
+
+
 copy_pal:
 	ldx #$00
 @loop:
@@ -108,14 +127,22 @@ copy_pal:
 	
 	rts
 
+
+
+
+
+
+
 nmi:
 	jmp (nmi_h)
-
 irq:
 	jmp (irq_h)
-
 h_null:
 	rti
+
+
+
+
 
 .include "main.s"
 
@@ -128,12 +155,19 @@ pal_cycle:
 	.byte $03, $23, $43, $63, $83, $A3, $C3, $E3
 	
 
+
+
+
+
 xenonstr_oam:
 	.byte $01, $3C, $70, $0A
 	.byte $01, $4C, $70, $0B
 	.byte $01, $5c, $70, $0C
 	.byte $01, $6c, $70, $0D
 	.byte $01, $7c, $70, $0C
+
+
+
 
 default_pal:
 	.byte $00, $e4, $ff, $ff
@@ -146,6 +180,9 @@ default_pal:
 	.byte $00, $00, $00, $00
 	.byte $00, $00, $00, $00
 
+
+
+
 .include "graphics.s"
 
 .zeropage
@@ -156,8 +193,9 @@ z_cyc: .res 1
 nmi_h: .res 2
 irq_h: .res 2
 
-z_sector: .res 1
+z_arg:    .res 1
 z_addr:   .res 2
+z_result: .res 1
 
 xe_entry: .res 2
 xe_boot:  .res 1
@@ -166,12 +204,14 @@ fi_len:   .res 1
 fi_addr:  .res 1
 fi_name:  .res 8
 
+
+
+
 .segment "BSS"
 
 w_disk_buf: .res 512
 
 .segment "VEC"
-
 .word nmi
 .word reset
 .word irq
