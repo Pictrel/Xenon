@@ -757,6 +757,7 @@ int main(int argc, char **argv) {
 	FILE *fp = fopen("bios.bin", "r");
 	if (!fp) fp = fopen("bin/bios.bin", "r");
 	if (!fp) fp = fopen("/usr/share/xenon/bios.bin", "r");
+	if (!fp) fp = fopen("/usr/local/share/xenon/bios.bin", "r");
 	
 	if (!fp) {
 		printf("Unable to load BIOS file\n");
