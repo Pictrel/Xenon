@@ -1,7 +1,7 @@
-all: xenon xge calendar.xen
+all: xenon xge examples.xen
 
 clean:
-	rm -rf build/* bios.* calendar.* xge xenon buildxen 
+	rm -rf build/* bios.* examples.* xge xenon buildxen gmon.out *.bin *.map
 
 xenon: src/*.c bios.bin
 	clang -O3 -g src/*.c -o xenon -l6502 -lraylib -lm -pedantic -Wall -Wno-overflow -pg
@@ -12,14 +12,14 @@ bios.bin: build/b_bios.obj
 build/b_%.obj: bios/%.s
 	ca65 --cpu 6502 --verbose $< -o $@
 
-build/c_%.obj: calendar/%.s
+build/e_%.obj: examples/%.s
 	ca65 --cpu 6502 --verbose $< -o $@
 
 %: tools/%.c
 	clang $< -o $@ -lraylib -lm `pkg-config --cflags --libs libconfig` -g
 
-calendar.bin: build/c_cal.obj
-	ld65 -v -o calendar.bin build/c_*.obj -m calendar.map -C conf/xenon_disc.ld
+hello.bin: build/e_hello.obj
+	ld65 -v -o hello.bin build/e_hello.obj -m hello.map -C conf/xenon_disc.ld
 
-calendar.xen: calendar.bin buildxen
-	./buildxen -o calendar.xen conf/calendar.cfg
+examples.xen: hello.bin buildxen
+	./buildxen -o examples.xen conf/examples.cfg
