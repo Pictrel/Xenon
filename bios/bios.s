@@ -157,8 +157,6 @@ pal_cycle:
 
 
 
-
-
 xenonstr_oam:
 	.byte $01, $3C, $70, $0A
 	.byte $01, $4C, $70, $0B
