@@ -4,7 +4,7 @@ clean:
 	rm -rf build/* bios.* examples.* xge xenon buildxen gmon.out *.bin *.map
 
 xenon: src/*.c bios.bin
-	clang -O3 -g src/*.c -o xenon -l6502 -lraylib -lm -pedantic -Wall -Wno-overflow -pg
+	gcc -O3 -g src/*.c -o xenon -l6502 -lraylib -lm -pedantic -Wall -Wno-overflow -pg
 
 build/%.obj: bios/%.s
 	ca65 --cpu 6502 --verbose $< -o $@
@@ -21,4 +21,5 @@ install: xenon
 	
 	#install bios headers/api
 	cp bios/xenon_def.s /usr/local/include/xenon/
+	cp bios/ram.s       /usr/local/include/xenon/
 	

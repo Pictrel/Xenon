@@ -1,5 +1,6 @@
 .zeropage
 
+;internal bios area
 z_tick: .res 1
 z_cyc: .res 1
 
@@ -17,6 +18,10 @@ fi_len:   .res 1
 fi_addr:  .res 1
 fi_name:  .res 8
 
+;arguments
+z_src:   .res 2
+z_dest:  .res 2
+z_count: .res 2
 
 .segment "BSS"
 

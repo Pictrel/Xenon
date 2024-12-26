@@ -183,6 +183,8 @@ default_pal:
 
 .include "graphics.s"
 
+.include "api.s"
+
 .include "ram.s"
 
 .segment "VEC"

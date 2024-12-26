@@ -5,6 +5,10 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include "config.h"
+
+#define RAYGUI_IMPLEMENTATION
+#include "raygui.h"
 
 #include "font.h"
 
@@ -158,18 +162,15 @@ int fd_idx;
 
 int irq_source;
 
+int fps = 60;
+
+bool irq;
+bool nmi;
+
 Image fb_b;
 Image fb_o;
 Texture gpu_fb_b;
 Texture gpu_fb_o;
-
-#define SCREEN_W 200
-#define SCREEN_H 150
-#define VBLANK_SIZE 28
-
-//#define GPU_DEBUG
-
-#define GPU_ENABLE_SPRITES
 
 typedef struct __attribute__((packed)) {
 	uint8_t unused : 4;
@@ -191,11 +192,11 @@ typedef enum {
 	FDD_TELL  = 5, /* read head position */
 } FloppyCMD;
 
-
-
-
-
-
+Color rgb332(uint8_t n) {
+	return (Color){((n & 0b11100000) >> 5 << 5),
+	               ((n & 0b00011100) >> 2 << 5),
+	               ((n & 0b00000011) >> 0 << 6), 0xff};
+}
 
 Color cpal(int i) {
 	return (Color){((vram[0x400 + (i % 16)] & 0b11100000) >> 5 << 5),
@@ -248,7 +249,7 @@ void fdd_process() {
 			fd_arg = IO_FDAT;
 			fd_err = 0;
 			fd_mode = 5;
-			fd_timer = 230 * (abs(IO_FDAT - fd_pos) + 120);
+			fd_timer = 70 * (abs(IO_FDAT - fd_pos) + 80);
 			break;
 		
 		case FDD_INIT:
@@ -273,13 +274,15 @@ void fdd_process() {
 	}
 }
 
-void fdd_cycle() {
+bool fdd_cycle() {
+	bool result = false;
 	if (fd_mode > 3) {
 		fd_timer--;
 		
 		if (fd_timer == 0) {
 			irq_source = 1;
 			m6502_irq(&cpu, TRUE);
+			result = true;
 			switch (fd_mode) {
 				case 4:
 					fd_motor = true;
@@ -298,11 +301,14 @@ void fdd_cycle() {
 			IO_FDAT = diskdata[fd_pos * 512 + (fd_idx++)];
 			irq_source = 1;
 			m6502_irq(&cpu, TRUE);
+			result = true;
 			if (fd_idx > 511) {
 				fd_mode = 1;
 			}
 		}
 	}
+	
+	return result;
 }
 
 
@@ -396,7 +402,7 @@ void cpu_iowrite(uint8_t addr, uint8_t val) {
 uint8_t cpu_ioread(uint8_t addr) {
 	
 	switch (addr) {
-		case 0x00: bus = getchar(); break;
+		//case 0x00: bus = getchar(); break; //NO
 		case 0x02: bus = joy1(); break;
 		case 0x03: bus = joy2(); break;
 		case 0x04: bus = cpu_cyc; break;
@@ -569,189 +575,107 @@ void vyc_int() {
 	
 }
 
-void handle_scn() {
+bool handle_scn() {
 	//printf("%02x\n", IO_ICTL);
-	if (IO_ICTL & 0b10000000) vyc_int();
+	if (IO_ICTL & 0b10000000) {
+		vyc_int();
+		return true;
+	}
+	
+	return false;
 }
 
 void handle_tim() {
 	
 }
 
-void update(void) {
-	for (int y=0; y<SCREEN_H + VBLANK_SIZE / 4; y++) {
-		if (y == SCREEN_H) {
-			m6502_nmi(&cpu);
-		}
-		
-		irq_triggered = false;
-		
-		IO_VY = y;
-		handle_scn();
-		
-		render_scanline(IO_VY);
-		
-		cpu_cyc += m6502_run(&cpu, 1);
-		m6502_irq(&cpu, FALSE);
-		cpu_cyc += m6502_run(&cpu, 63);
-		
-		fdd_cycle();
-		cpu_cyc += m6502_run(&cpu, 1);
-		m6502_irq(&cpu, FALSE);
-		cpu_cyc += m6502_run(&cpu, 63);
-		
-		fdd_cycle();
-		cpu_cyc += m6502_run(&cpu, 1);
-		m6502_irq(&cpu, FALSE);
-		cpu_cyc += m6502_run(&cpu, 63);
-		
-		fdd_cycle();
-		cpu_cyc += m6502_run(&cpu, 1);
-		m6502_irq(&cpu, FALSE);
-		cpu_cyc += m6502_run(&cpu, 63);
-		
-		//printf("C%d\n", cpu_cyc);
-		
+#ifdef CPU_DEBUG
+
+	void debug_update(void);
+	void update(void) {
+		debug_update();
 	}
 	
-	if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-		printf("? ");
-		
-		uint16_t addr;
-		scanf("%x", &addr);
-		
-		for (int y=0; y<16; y++) {
-			for (int x=0; x<16; x++) {
-				printf("%02x ", cpu_read(NULL, addr + x + y * 16));
-				if ((x % 8) == 7) printf(" ");
+	void debug_draw(void);
+	void draw(void) {
+		debug_draw();
+	} 
+	
+#else
+	void update(void) {
+		for (int y=0; y<SCREEN_H + VBLANK_SIZE / 4; y++) {
+			if (y == SCREEN_H) {
+				m6502_nmi(&cpu);
 			}
 			
-			printf("| ");
-			for (int x=0; x<16; x++) {
-				uint8_t n = cpu_read(NULL, addr + x + y * 16);
-				printf("%c", (n > 0x1f && n < 0x80) ? n : '.');
-				if ((x % 8) == 7) printf(" ");
-			}
+			irq_triggered = false;
 			
-			printf(" |\n");
-		}
-	}
-}
-
-/*void DrawChar(int col, int x, int y, int attr) {
-	
-	for (int i=0; i<8; i++) {
-		for (int j=0; j<12; j++) {
-			if (attr & 0x80) {
-				DrawRectangle((x + i*2) * 2, (y + j*2) * 2, 4, 4,
-					((font_8x12[(attr % 128) * 12 + j] >> (7-i)) & 1) ? opal[col % 16] : BLANK
-				);
-			} else {
-				DrawRectangle((x + i) * 2, (y + j) * 2, 2, 2,
-					((font_8x12[(attr & 0x7f) * 12 + j] >> (7-i)) & 1) ? opal[col % 16] : BLANK
-				);
-			}
-		}
-	}
-}*/
-
-/* void DrawBackground() {
-	for (int x=0; x<64; x++) {
-		for (int y=0; y<64; y++) {
-			int eff_x = x * 8 - IO_VMX; //effective X coord
-			int eff_y = y * 8 - IO_VMY; //effective Y coord
+			IO_VY = y;
+			handle_scn();
 			
-			if ((eff_x > -8) && (eff_y > -8) &&
-			    (eff_x < 192+8) && (eff_y < 144+8)) {
-				uint8_t tile = vram[0x800 + (x % 32) + (y % 32) * 32];
-				uint8_t attr = vram[0xC00 + (x % 32) + (y % 32) * 32];
-				
-				DrawTile(attr & 0b1111, eff_x, eff_y, tile);
-			}
+			render_scanline(IO_VY);
+			
+			cpu_cyc += m6502_run(&cpu, 1);
+			m6502_irq(&cpu, FALSE);
+			cpu_cyc += m6502_run(&cpu, 63);
+			
+			fdd_cycle();
+			cpu_cyc += m6502_run(&cpu, 1);
+			m6502_irq(&cpu, FALSE);
+			cpu_cyc += m6502_run(&cpu, 63);
+			
+			fdd_cycle();
+			cpu_cyc += m6502_run(&cpu, 1);
+			m6502_irq(&cpu, FALSE);
+			cpu_cyc += m6502_run(&cpu, 63);
+			
+			fdd_cycle();
+			cpu_cyc += m6502_run(&cpu, 1);
+			m6502_irq(&cpu, FALSE);
+			cpu_cyc += m6502_run(&cpu, 63);
 		}
 	}
-} */
-
-void draw(void) {
-	ClearBackground(BLACK);
 	
-	if (IsTextureValid(gpu_fb_b)) UnloadTexture(gpu_fb_b);
-	gpu_fb_b = LoadTextureFromImage(fb_b);
-	
-	if (IsTextureValid(gpu_fb_o)) UnloadTexture(gpu_fb_o);
-	gpu_fb_o = LoadTextureFromImage(fb_o);
-	
-	const int SCALE = fmin(GetRenderWidth() / SCREEN_W,
-	                       GetRenderHeight() / SCREEN_H);
-	
-	const int w = 200 * SCALE;
-	const int h = 150 * SCALE;
-	
-	if (USE_LETTERBOX) {
-		DrawTexturePro(gpu_fb_b,
-			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
-			(Rectangle){GetRenderWidth()  / 2 - w / 2, 
-			            GetRenderHeight() / 2 - h / 2, w, h},
-			(Vector2){0, 0}, 0.0f, WHITE);
-		DrawTexturePro(gpu_fb_o,
-			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
-			(Rectangle){GetRenderWidth()  / 2 - w / 2, 
-			            GetRenderHeight() / 2 - h / 2, w, h},
-			(Vector2){0, 0}, 0.0f, WHITE);
-	} else {
-		DrawTexturePro(gpu_fb_b, 
-			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
-			(Rectangle){0, 0, GetRenderWidth(), GetRenderHeight()},
-			(Vector2){0, 0}, 0.0f, WHITE);
-		DrawTexturePro(gpu_fb_o, 
-			(Rectangle){0, 0, SCREEN_W, SCREEN_H},
-			(Rectangle){0, 0, GetRenderWidth(), GetRenderHeight()},
-			(Vector2){0, 0}, 0.0f, WHITE);
-	}
-	
-	/* ClearBackground(BLACK);
-	
-	VRAMEnt *gfx = (VRAMEnt*)vram;
-	
-	
-	printf("\n");
-	for (int i=0; i<1024; i++) {
-		if ((i % 16) == 0) printf("\n");
-		printf("%02x ", vram[i]);
-	}
-	
-	
-	DrawBackground();
-	
-	for (int i=0; i<256; i++) {
-		switch (gfx[i].type) {
-			case 0x00: break;
-			case 0x01: break;
-			case 0x02: break;
-			case 0x03: break;
-			case 0x04: break;
-			case 0x05: break;
-			case 0x06: DrawTile(gfx[i].col, gfx[i].x, gfx[i].y, gfx[i].attr); break;
-			case 0x07: DrawChar(gfx[i].col, gfx[i].x, gfx[i].y, gfx[i].attr); break;
-			case 0x08: break;
-			case 0x09: break;
-			case 0x0A: break;
-			case 0x0B: break;
-			case 0x0C: break;
-			case 0x0D: break;
-			case 0x0E: break;
-			case 0x0F: break;
+	void draw(void) {
+		ClearBackground(BLACK);
+		
+		if (IsTextureValid(gpu_fb_b)) UnloadTexture(gpu_fb_b);
+		gpu_fb_b = LoadTextureFromImage(fb_b);
+		
+		if (IsTextureValid(gpu_fb_o)) UnloadTexture(gpu_fb_o);
+		gpu_fb_o = LoadTextureFromImage(fb_o);
+		
+		const int SCALE = fmin(GetRenderWidth() / SCREEN_W,
+		                       GetRenderHeight() / SCREEN_H);
+		
+		const int w = 200 * SCALE;
+		const int h = 150 * SCALE;
+		
+		if (USE_LETTERBOX) {
+			DrawTexturePro(gpu_fb_b,
+				(Rectangle){0, 0, SCREEN_W, SCREEN_H},
+				(Rectangle){GetRenderWidth()  / 2 - w / 2, 
+				            GetRenderHeight() / 2 - h / 2, w, h},
+				(Vector2){0, 0}, 0.0f, WHITE);
+			DrawTexturePro(gpu_fb_o,
+				(Rectangle){0, 0, SCREEN_W, SCREEN_H},
+				(Rectangle){GetRenderWidth()  / 2 - w / 2, 
+				            GetRenderHeight() / 2 - h / 2, w, h},
+				(Vector2){0, 0}, 0.0f, WHITE);
+		} else {
+			DrawTexturePro(gpu_fb_b, 
+				(Rectangle){0, 0, SCREEN_W, SCREEN_H},
+				(Rectangle){0, 0, GetRenderWidth(), GetRenderHeight()},
+				(Vector2){0, 0}, 0.0f, WHITE);
+			DrawTexturePro(gpu_fb_o, 
+				(Rectangle){0, 0, SCREEN_W, SCREEN_H},
+				(Rectangle){0, 0, GetRenderWidth(), GetRenderHeight()},
+				(Vector2){0, 0}, 0.0f, WHITE);
 		}
-	} */
-	
-	DrawFPS(0, 0); 
-} 
-
-
-
-
-
-
+		
+		DrawFPS(0, 0); 
+	} 
+#endif
 
 int main(int argc, char **argv) {
 	FILE *fp = fopen("bios.bin", "r");
@@ -781,9 +705,9 @@ int main(int argc, char **argv) {
 	fread(diskdata, 1, 0x20000, fp);
 	
 	SetTraceLogLevel(10);
-	InitWindow(SCREEN_W * 2, SCREEN_H * 2, "xenon");
+	InitWindow(SCREEN_W * 3, SCREEN_H * 3, "xenon");
 	SetWindowState(FLAG_WINDOW_RESIZABLE);
-	SetTargetFPS(60);
+	SetTargetFPS(fps);
 	
 	SetWindowMinSize(SCREEN_W, SCREEN_H);
 	
