@@ -12,3 +12,7 @@ The XENON is an 8-bit fantasy console inspired by the [Famicom Disk System](http
 Building the XENON requires installing [m6502](https://github.com/redcode/6502) and [raylib](https://github.com/raysan5/raylib).
 
 After installing said libraries, run `make` to build `xenon` and `bios.bin`, and `make install` to install them.
+
+## Debugger
+
+The XENON has a built-in debugger, which lets you step through the code, disassemble it, and view the memory.
