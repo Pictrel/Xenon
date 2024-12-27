@@ -7,8 +7,8 @@
 #include <string.h>
 #include "config.h"
 
-#define RAYGUI_IMPLEMENTATION
-#include "raygui.h"
+//#define RAYGUI_IMPLEMENTATION
+//#include "raygui.h"
 
 #include "font.h"
 

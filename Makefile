@@ -4,7 +4,7 @@ clean:
 	rm -rf build/* bios.* examples.* xge xenon* buildxen gmon.out *.bin *.map
 
 xenon: src/*.c bios.bin
-	gcc -O3 -g src/*.c -o xenon -l6502 -lraylib -lm -pedantic -Wall -Wno-overflow -pg
+	gcc -O3 -g src/*.c -o xenon -l6502 -lraylib -lm -pedantic -Wall -Wno-overflow -pg -Wno-implicit-function-declaration
 	
 xenon-rel: src/*.c bios.bin
 	gcc -O3 src/*.c -o xenon-rel -pedantic -Wall -Wno-overflow /usr/lib/lib6502.a \

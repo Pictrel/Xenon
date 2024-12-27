@@ -12,6 +12,61 @@
 #include <stdint.h>
 #include "font6x8.h"
 
+typedef enum {
+	NONE = 0,
+	ACCU,
+	ABSL,
+	ABSX,
+	ABSY,
+	IMMD,
+	IMPL,
+	INDI,
+	XIND,
+	INDY,
+	RELA,
+	ZPAG,
+	ZPGX,
+	ZPGY
+} Imode;
+
+const struct {
+	char *o;
+	Imode m;
+} opcodes[256] = {
+	{"BRK",IMPL}, {"ORA",XIND}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"ORA",ZPAG}, {"ASL",ZPAG}, {"???",NONE}, 
+	{"PHP",IMPL}, {"ORA",IMMD}, {"ASL",ACCU}, {"???",NONE}, {"???",NONE}, {"ORA",ABSL}, {"ASL",ABSL}, {"???",NONE}, 
+	{"BPL",RELA}, {"ORA",INDY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"ORA",ZPGX}, {"ASL",ZPGX}, {"???",NONE}, 
+	{"CLC",IMPL}, {"ORA",ABSY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"ORA",ABSX}, {"ASL",ABSX}, {"???",NONE}, 
+	{"JSR",ABSL}, {"AND",XIND}, {"???",NONE}, {"???",NONE}, {"BIT",ZPAG}, {"AND",ZPAG}, {"ROL",ZPAG}, {"???",NONE}, 
+	{"PLP",IMPL}, {"AND",IMMD}, {"ROL",ACCU}, {"???",NONE}, {"BIT",ABSL}, {"AND",ABSL}, {"ROL",ABSL}, {"???",NONE}, 
+	{"BMI",RELA}, {"AND",INDY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"AND",ZPGX}, {"ROL",ZPGX}, {"???",NONE}, 
+	{"SEC",IMPL}, {"AND",ABSY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"AND",ABSX}, {"ROL",ABSX}, {"???",NONE}, 
+	{"RTI",IMPL}, {"EOR",XIND}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"EOR",ZPAG}, {"LSR",ZPAG}, {"???",NONE}, 
+	{"PHA",IMPL}, {"EOR",IMMD}, {"LSR",ACCU}, {"???",NONE}, {"JMP",ABSL}, {"EOR",ABSL}, {"LSR",ABSL}, {"???",NONE}, 
+	{"BVC",RELA}, {"EOR",INDY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"EOR",ZPGX}, {"LSR",ZPGX}, {"???",NONE}, 
+	{"CLI",IMPL}, {"EOR",ABSY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"EOR",ABSX}, {"LSR",ABSX}, {"???",NONE}, 
+	{"RTS",IMPL}, {"ADC",XIND}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"ADC",ZPAG}, {"ROR",ZPAG}, {"???",NONE}, 
+	{"PLA",IMPL}, {"ADC",IMMD}, {"ROR",ACCU}, {"???",NONE}, {"JMP",INDI}, {"ADC",ABSL}, {"ROR",ABSL}, {"???",NONE}, 
+	{"BVS",RELA}, {"ADC",INDY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"ADC",ZPGX}, {"ROR",ZPGX}, {"???",NONE}, 
+	{"SEI",IMPL}, {"ADC",ABSY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"ADC",ABSX}, {"ROR",ABSX}, {"???",NONE}, 
+	{"???",NONE}, {"STA",XIND}, {"???",NONE}, {"???",NONE}, {"STY",ZPAG}, {"STA",ZPAG}, {"STX",ZPAG}, {"???",NONE}, 
+	{"DEY",IMPL}, {"???",NONE}, {"TXA",IMPL}, {"???",NONE}, {"STY",ABSL}, {"STA",ABSL}, {"STX",ABSL}, {"???",NONE}, 
+	{"BCC",RELA}, {"STA",INDY}, {"???",NONE}, {"???",NONE}, {"STY",ZPGX}, {"STA",ZPGX}, {"STX",ZPGY}, {"???",NONE}, 
+	{"TYA",IMPL}, {"STA",ABSY}, {"TXS",IMPL}, {"???",NONE}, {"???",NONE}, {"STA",ABSX}, {"???",NONE}, {"???",NONE}, 
+	{"LDY",IMMD}, {"LDA",XIND}, {"LDX",IMMD}, {"???",NONE}, {"LDY",ZPAG}, {"LDA",ZPAG}, {"LDX",ZPAG}, {"???",NONE}, 
+	{"TAY",IMPL}, {"LDA",IMMD}, {"TAX",IMPL}, {"???",NONE}, {"LDY",ABSL}, {"LDA",ABSL}, {"LDX",ABSL}, {"???",NONE}, 
+	{"BCS",RELA}, {"LDA",INDY}, {"???",NONE}, {"???",NONE}, {"LDY",ZPGX}, {"LDA",ZPGX}, {"LDX",ZPGY}, {"???",NONE}, 
+	{"CLV",IMPL}, {"LDA",ABSY}, {"TSX",IMPL}, {"???",NONE}, {"LDY",ABSX}, {"LDA",ABSX}, {"LDX",ABSY}, {"???",NONE}, 
+	{"CPY",IMMD}, {"CMP",XIND}, {"???",NONE}, {"???",NONE}, {"CPY",ZPAG}, {"CMP",ZPAG}, {"DEC",ZPAG}, {"???",NONE}, 
+	{"INY",IMPL}, {"CMP",IMMD}, {"DEX",IMPL}, {"???",NONE}, {"CPY",ABSL}, {"CMP",ABSL}, {"DEC",ABSL}, {"???",NONE}, 
+	{"BNE",RELA}, {"CMP",INDY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"CMP",ZPGX}, {"DEC",ZPGX}, {"???",NONE}, 
+	{"CLD",IMPL}, {"CMP",ABSY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"CMP",ABSX}, {"DEC",ABSX}, {"???",NONE}, 
+	{"CPX",IMMD}, {"SBC",XIND}, {"???",NONE}, {"???",NONE}, {"CPX",ZPAG}, {"SBC",ZPAG}, {"INC",ZPAG}, {"???",NONE}, 
+	{"INX",IMPL}, {"SBC",IMMD}, {"NOP",IMPL}, {"???",NONE}, {"CPX",ABSL}, {"SBC",ABSL}, {"INC",ABSL}, {"???",NONE}, 
+	{"BEQ",RELA}, {"SBC",INDY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"SBC",ZPGX}, {"INC",ZPGX}, {"???",NONE}, 
+	{"SED",IMPL}, {"SBC",ABSY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"SBC",ABSX}, {"INC",ABSX}, {"???",NONE}
+};
+
 extern Image fb_b;
 extern Image fb_o;
 extern Texture gpu_fb_b;
@@ -27,9 +82,10 @@ enum {
 	H_MEM = 1,
 	H_ASM = 2
 } hi_sel = H_CONS;
-uint16_t mem_sel = 0xFF00;
-uint16_t mem_pointer = 0xFF00;
-uint16_t prg_pointer;
+uint16_t mem_sel = 0xF000;
+uint16_t prg_sel = 0xF000;
+uint16_t mem_pointer = 0xF000;
+uint16_t prg_pointer = 0xF000;
 bool unbound = false;
 
 extern bool irq;
@@ -64,6 +120,69 @@ void sys_step() {
 	
 }
 
+int get_inst_width(uint16_t addr) {
+	switch (opcodes[cpu_read(NULL, addr)].m) {
+		case NONE: return 1;
+		case ACCU: return 1;
+		case ABSL: return 3;
+		case ABSX: return 3;
+		case ABSY: return 3;
+		case IMMD: return 2;
+		case IMPL: return 1;
+		case INDI: return 3;
+		case XIND: return 2;
+		case INDY: return 2;
+		case RELA: return 2;
+		case ZPAG: return 2;
+		case ZPGX: return 2;
+		case ZPGY: return 2;
+	}
+}
+
+char *get_inst_name(uint16_t addr) {
+	switch (opcodes[cpu_read(NULL, addr)].m) {
+		case NONE: return TextFormat("---");
+		case ACCU: return TextFormat("%3s A",            opcodes[cpu_read(NULL, addr)].o);
+		
+		
+		case ABSL: return TextFormat("%3s $%02x%02x",    opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+2),
+		                                                         cpu_read(NULL, addr+1));
+		case ABSX: return TextFormat("%3s $%02x%02x,X",  opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+2),
+		                                                         cpu_read(NULL, addr+1));
+		case ABSY: return TextFormat("%3s $%02x%02x,Y",  opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+2),
+		                                                         cpu_read(NULL, addr+1));
+		
+		
+		case IMMD: return TextFormat("%3s #$%02x",        opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+1));
+		
+		case IMPL: return TextFormat("%3s",              opcodes[cpu_read(NULL, addr)].o);
+		
+		case INDI: return TextFormat("%3s ($%02x%02x)",  opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+2),
+		                                                         cpu_read(NULL, addr+1));
+		                                                         
+		case XIND: return TextFormat("%3s ($%02x%02x,X)",opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+2));
+
+		case INDY: return TextFormat("%3s ($%02x%02x),Y",opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+2));
+
+		case RELA: return TextFormat("%3s $%02x",        opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+1));
+		
+		case ZPAG: return TextFormat("%3s $%02x",        opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+1));
+		case ZPGX: return TextFormat("%3s $%02x,X",      opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+1));
+		case ZPGY: return TextFormat("%3s $%02x,Y",      opcodes[cpu_read(NULL, addr)].o,
+		                                                         cpu_read(NULL, addr+1));
+	}
+}
+
 void debug_update() {
 	ClearWindowState(FLAG_WINDOW_RESIZABLE);
 	
@@ -96,6 +215,8 @@ void debug_update() {
 	if (IsKeyPressed(KEY_S) && IsKeyDown(KEY_LEFT_CONTROL)) cpu_running = false;
 	if (IsKeyPressed(KEY_R) && IsKeyDown(KEY_LEFT_CONTROL)) cpu_running = true, cpu_speed = 166420;
 	if (IsKeyPressed(KEY_H) && IsKeyDown(KEY_LEFT_CONTROL)) cpu_running = true, cpu_speed = 1060;
+	
+	if (IsKeyPressed(KEY_D) && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_ASM;
 	if (IsKeyPressed(KEY_M) && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_MEM;
 	if (IsKeyPressed(KEY_U) && IsKeyDown(KEY_LEFT_CONTROL)) {
 		unbound = !unbound;
@@ -110,6 +231,11 @@ void debug_update() {
 		
 		if (mem_sel < (mem_pointer))        mem_pointer = (mem_sel & 0xFFF8);
 		if (mem_sel > (mem_pointer + 0xA0)) mem_pointer = (mem_sel & 0xFFF8) - 0xA0;
+	}
+	
+	if (hi_sel == H_ASM) {
+		if (IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP))       prg_sel--;
+		if (IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN))   prg_sel += get_inst_width(prg_sel);
 	}
 }
 
@@ -180,7 +306,15 @@ uint8_t get_state_color() {
 }
 
 void draw_disasm() {
-	
+	int offset = 0;
+	for (int y=0; y<32; y++) {
+		cputs(TextFormat("%04X", prg_pointer + offset), 8 + 7, 168 + y * 8 + 8, 0xff, 1);
+		cputs(TextFormat("%04X", prg_pointer + offset), 9 + 7, 168 + y * 8 + 8, 0xff, 1);
+		
+		cputs(TextFormat("%3s", get_inst_name(prg_pointer + offset)), 9 + 7 * 6, 168 + y * 8 + 8, 0xff, 1);
+		
+		offset += get_inst_width(prg_pointer + offset);
+	}
 }
 
 void draw_mem() {
@@ -231,8 +365,7 @@ void debug_draw() {
 	              10 + IO_VY                   - 1, 3, 3, (Color){0xff, 0x00, 0xff, 0xff});
 	
 	// Assembly Viewer
-	DrawRectangle(8, 168, 292 - 4, 450 - 168 - 8, rgb332(0x01));
-	
+	DrawRectangle(8, 168, 292 - 4, 450 - 168 - 8, rgb332((hi_sel == H_ASM) ? 0x02 : 0x01));
 	draw_disasm();
 	
 	// Memory viewer
