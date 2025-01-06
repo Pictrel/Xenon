@@ -10,7 +10,13 @@
 #include <stdbool.h>
 #include <raylib.h>
 #include <stdint.h>
-#include "font6x8.h"
+
+int MeasureChar(uint8_t c, int scale);
+int DrawChar(uint8_t c, int x, int y, int scale, Color col);
+int DrawCharMonospace(uint8_t c, int x, int y, int scale, Color col);
+int MeasureString(char *s, int scale, int spacing);
+int DrawString(uint8_t *s, int x, int y, int scale, int spacing, Color col);
+int DrawStringMonospace(uint8_t *s, int x, int y, int scale, int spacing, Color col);
 
 typedef enum {
 	NONE = 0,
@@ -74,7 +80,7 @@ extern Texture gpu_fb_o;
 
 extern M6502 cpu;
 extern int cpu_cyc;
-bool cpu_running = true;
+bool cpu_running = false;
 int cpu_speed = 166420;
 
 enum {
@@ -239,20 +245,22 @@ void debug_update() {
 	}
 }
 
-void cputc(char c, int x, int y, uint8_t color, int scale) {
+/*
+void DrawChar(char c, int x, int y, uint8_t color, int scale) {
 	for (int i=0; i<6; i++) {
 		for (int j=0; j<8; j++) {
-			if ((font6x8_ascii[c][i] >> j) & 1) DrawRectangle(x+i*scale, y+j*scale, scale, scale, rgb332(color));
+			if ((antarex[c][i] >> j) & 1) DrawRectangle(x+i*scale, y+j*scale, scale, scale, rgb332(color));
 		}
 	}
 }
 
-void cputs(char *s, int x, int y, uint8_t color, int scale) {
+void DrawString(char *s, int x, int y, uint8_t color, int scale) {
 	for (int i=0; s[i]; i++) {
-		cputc(s[i], x, y, color, scale);
+		DrawChar(s[i], x, y, color, scale);
 		x += 7*scale;
 	}
 }
+*/
 
 char *get_region_name(uint16_t addr) {
 	switch (addr >> 12) {
@@ -308,10 +316,10 @@ uint8_t get_state_color() {
 void draw_disasm() {
 	int offset = 0;
 	for (int y=0; y<32; y++) {
-		cputs(TextFormat("%04X", prg_pointer + offset), 8 + 7, 168 + y * 8 + 8, 0xff, 1);
-		cputs(TextFormat("%04X", prg_pointer + offset), 9 + 7, 168 + y * 8 + 8, 0xff, 1);
+		DrawStringMonospace(TextFormat("%04X", prg_pointer + offset), 8 + 7, 168 + y * 8 + 8, 1, 0, WHITE);
+		DrawStringMonospace(TextFormat("%04X", prg_pointer + offset), 9 + 7, 168 + y * 8 + 8, 1, 0, WHITE);
 		
-		cputs(TextFormat("%3s", get_inst_name(prg_pointer + offset)), 9 + 7 * 6, 168 + y * 8 + 8, 0xff, 1);
+		DrawStringMonospace(TextFormat("%3s", get_inst_name(prg_pointer + offset)), 9 + 7 * 6, 168 + y * 8 + 8, 1, 0, WHITE);
 		
 		offset += get_inst_width(prg_pointer + offset);
 	}
@@ -319,28 +327,28 @@ void draw_disasm() {
 
 void draw_mem() {
 	for (int y=0; y<21; y++) {
-		cputs(TextFormat("%04X", mem_pointer + y * 8), 8 + 292 + 4 + (7 * 1), 168 + 99 + y * 8, 0xff, 1);
-		cputs(TextFormat("%04X", mem_pointer + y * 8), 9 + 292 + 4 + (7 * 1), 168 + 99 + y * 8, 0xff, 1);
+		DrawString(TextFormat("%04X", mem_pointer + y * 8), 8 + 292 + 4 + (7 * 1), 168 + 99 + y * 8, 1, 1, WHITE);
+		DrawString(TextFormat("%04X", mem_pointer + y * 8), 9 + 292 + 4 + (7 * 1), 168 + 99 + y * 8, 1, 1, WHITE);
 		
 		for (int x=0; x<8; x++) {
 			uint16_t a = mem_pointer + x + y * 8;
 			uint8_t n = cpu_read(NULL, a);
 			
 			
-			cputs(TextFormat("%02X", n),
+			DrawString(TextFormat("%02X", n),
 					8 + 292 + 4 + x * (7 * 3) + (7 * 7),
-					168 + 99 + y * 8, 0xff, 1
+					168 + 99 + y * 8, 1, 0, WHITE
 			);
 			
 			if (mem_sel == a)
-			cputs(TextFormat("%02X", n),
+			DrawString(TextFormat("%02X", n),
 					8 + 292 + 4 + x * (7 * 3) + (7 * 7) + 1,
-					168 + 99 + y * 8, 0xff, 1
+					168 + 99 + y * 8, 1, 0, WHITE
 			);
 			
-			cputc((n >= 0x20 && n <= 0x7F) ? n : '.',
+			DrawChar((n >= 0x20 && n <= 0x7F) ? n : '.',
 					8 + 292 + 4 + x * (7 * 1) + (7 * 32),
-					168 + 99 + y * 8, 0xff, 1);
+					168 + 99 + y * 8, 1, WHITE);
 		}
 	}
 }
@@ -373,12 +381,12 @@ void debug_draw() {
 	draw_mem();
 	
 	// Registers
-	cputs(TextFormat("A:  %02X\n", cpu.state.a),  220, 10,          0xff, 2);
-	cputs(TextFormat("X:  %02X\n", cpu.state.x),  220, 10 + 16 * 1, 0xff, 2);
-	cputs(TextFormat("Y:  %02X\n", cpu.state.y),  220, 10 + 16 * 2, 0xff, 2);
-	cputs(TextFormat("S:  %02X\n", cpu.state.s),  220, 10 + 16 * 3, 0xff, 2);
-	cputs(TextFormat("PC: %04X (%s)\n", cpu.state.pc, get_region_name(cpu.state.pc)), 220, 10 + 16 * 4, 0xff, 2);
-	cputs(TextFormat("%c%c%c%c%c%c%c%c\n",
+	DrawStringMonospace(TextFormat("A:  %02X\n", cpu.state.a),  220, 10,          2, 0, WHITE);
+	DrawStringMonospace(TextFormat("X:  %02X\n", cpu.state.x),  220, 10 + 16 * 1, 2, 0, WHITE);
+	DrawStringMonospace(TextFormat("Y:  %02X\n", cpu.state.y),  220, 10 + 16 * 2, 2, 0, WHITE);
+	DrawStringMonospace(TextFormat("S:  %02X\n", cpu.state.s),  220, 10 + 16 * 3, 2, 0, WHITE);
+	DrawStringMonospace(TextFormat("PC: %04X (%s)\n", cpu.state.pc, get_region_name(cpu.state.pc)), 220, 10 + 16 * 4, 2, 0, WHITE);
+	DrawStringMonospace(TextFormat("%c%c%c%c%c%c%c%c\n",
 		(cpu.state.p & 0x80) ? 'N' : '-',
 		(cpu.state.p & 0x40) ? 'V' : '-',
 		(cpu.state.p & 0x20) ? '-' : '-',
@@ -386,19 +394,19 @@ void debug_draw() {
 		(cpu.state.p & 0x08) ? 'D' : '-',
 		(cpu.state.p & 0x04) ? 'I' : '-',
 		(cpu.state.p & 0x02) ? 'Z' : '-',
-		(cpu.state.p & 0x01) ? 'C' : '-'), 220, 10 + 16 * 6, 0xff, 2);
-	cputs(TextFormat("NMI"),                  220,          10 + 16 * 8, nmi ? 0xFC : 0b01001001, 2);
-	cputs(TextFormat("IRQ"),                  220 + 14 * 4, 10 + 16 * 8, irq ? 0xFC : 0b01001001, 2);
-	cputs(TextFormat("%s", get_state_name()), 220 + 14 * 8, 10 + 16 * 8, get_state_color(), 2);
+		(cpu.state.p & 0x01) ? 'C' : '-'), 220, 10 + 16 * 6, 2, 0, WHITE);
+	DrawStringMonospace(TextFormat("NMI"),                  220,          10 + 16 * 8, 2, 0, nmi?GOLD:WHITE);
+	DrawStringMonospace(TextFormat("IRQ"),                  220 + 14 * 4, 10 + 16 * 8, 2, 0, irq?GOLD:WHITE);
+	DrawStringMonospace(TextFormat("%s", get_state_name()), 220 + 14 * 8, 10 + 16 * 8, 2, 0, WHITE);
 	
 	// I/O
-	cputs(TextFormat("VY:   %02X", IO_VY),       292 + 16 + 14 * 1,  168 + 16 * 0, 0xff, 2);
-	cputs(TextFormat("VYC:  %02X", IO_VYC),      292 + 16 + 14 * 11, 168 + 16 * 0, 0xff, 2);
-	cputs(TextFormat("VMX:  %02X", IO_VMX),      292 + 16 + 14 * 1,  168 + 16 * 1, 0xff, 2);
-	cputs(TextFormat("VMY:  %02X", IO_VMY),      292 + 16 + 14 * 11, 168 + 16 * 1, 0xff, 2);
-	cputs(TextFormat("FSTA: %02X", get_FSTA()),  292 + 16 + 14 * 1,  168 + 16 * 2, 0xff, 2);
-	cputs(TextFormat("FPOS: %02X", fd_pos),      292 + 16 + 14 * 11, 168 + 16 * 2, 0xff, 2);
-	cputs(TextFormat("CYC:  %08X", cpu_cyc),     292 + 16 + 14 * 1,  168 + 16 * 3, 0xff, 2);
+	DrawStringMonospace(TextFormat("VY:   %02X", IO_VY),       292 + 16 + 14 * 1,  168 + 16 * 0, 2, 1, WHITE);
+	DrawStringMonospace(TextFormat("VYC:  %02X", IO_VYC),      292 + 16 + 14 * 11, 168 + 16 * 0, 2, 1, WHITE);
+	DrawStringMonospace(TextFormat("VMX:  %02X", IO_VMX),      292 + 16 + 14 * 1,  168 + 16 * 1, 2, 1, WHITE);
+	DrawStringMonospace(TextFormat("VMY:  %02X", IO_VMY),      292 + 16 + 14 * 11, 168 + 16 * 1, 2, 1, WHITE);
+	DrawStringMonospace(TextFormat("FSTA: %02X", get_FSTA()),  292 + 16 + 14 * 1,  168 + 16 * 2, 2, 1, WHITE);
+	DrawStringMonospace(TextFormat("FPOS: %02X", fd_pos),      292 + 16 + 14 * 11, 168 + 16 * 2, 2, 1, WHITE);
+	DrawStringMonospace(TextFormat("CYC:  %08X", cpu_cyc),     292 + 16 + 14 * 1,  168 + 16 * 3, 2, 1, WHITE);
 	
 	DrawFPS(0, 0);
 }
