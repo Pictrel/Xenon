@@ -11,6 +11,10 @@
 #include <raylib.h>
 #include <stdint.h>
 
+#define MAX_INST_WIDTH 3
+#define DISASM_SIZE  512
+#define MAX_TRAPS 16
+
 int MeasureChar(uint8_t c, int scale);
 int DrawChar(uint8_t c, int x, int y, int scale, Color col);
 int DrawCharMonospace(uint8_t c, int x, int y, int scale, Color col);
@@ -73,6 +77,17 @@ const struct {
 	{"SED",IMPL}, {"SBC",ABSY}, {"???",NONE}, {"???",NONE}, {"???",NONE}, {"SBC",ABSX}, {"INC",ABSX}, {"???",NONE}
 };
 
+struct {
+	const char *s;
+	int w;
+	int trap;
+	uint16_t pc;
+} disasm_cache[DISASM_SIZE];
+
+struct {
+	int addr;
+} traps[MAX_TRAPS] = {0};
+
 extern Image fb_b;
 extern Image fb_o;
 extern Texture gpu_fb_b;
@@ -89,9 +104,11 @@ enum {
 	H_ASM = 2
 } hi_sel = H_CONS;
 uint16_t mem_sel = 0xF000;
-uint16_t prg_sel = 0xF000;
 uint16_t mem_pointer = 0xF000;
-uint16_t prg_pointer = 0xF000;
+
+uint16_t prg_base;
+int prg_sel = 0;
+int prg_off = 0;
 bool unbound = false;
 
 extern bool irq;
@@ -102,6 +119,36 @@ Color rgb332(uint8_t n);
 bool handle_scn(void);
 void render_pixel(int x, int y);
 void render_scanline(int y);
+
+int add_isnt_trap(uint16_t addr) {
+	for (int i=0; i<MAX_TRAPS; i++) {
+		if (traps[i].addr == 0) {
+			traps[i].addr = addr;
+			return i;
+		}
+	}
+	
+	return -1;
+}
+
+int get_inst_trap(uint16_t addr) {
+	for (int i=0; i<MAX_TRAPS; i++) {
+		if (traps[i].addr == addr) {
+			return i;
+		}
+	}
+	
+	return -1;
+}
+
+void rm_inst_trap(uint16_t addr) {
+	for (int i=0; i<MAX_TRAPS; i++) {
+		if (traps[i].addr == addr) {
+			traps[i].addr = 0;
+			return;
+		}
+	}
+}
 
 void sys_step() {
 	irq = false;
@@ -122,6 +169,11 @@ void sys_step() {
 		render_scanline(IO_VY);
 		IO_VY++;
 		if (IO_VY > 156) IO_VY = 0;
+	}
+	
+	if (get_inst_trap(cpu.state.pc) > -1) {
+		printf("CPU TRAP @ $%04x\n", cpu.state.pc);
+		cpu_running = false;
 	}
 	
 }
@@ -148,44 +200,61 @@ int get_inst_width(uint16_t addr) {
 char *get_inst_name(uint16_t addr) {
 	switch (opcodes[cpu_read(NULL, addr)].m) {
 		case NONE: return TextFormat("---");
-		case ACCU: return TextFormat("%3s A",            opcodes[cpu_read(NULL, addr)].o);
+		case ACCU: return TextFormat("%3s A",            opcodes[(uint8_t)cpu_read(NULL, addr)].o);
 		
 		
-		case ABSL: return TextFormat("%3s $%02x%02x",    opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+2),
-		                                                         cpu_read(NULL, addr+1));
-		case ABSX: return TextFormat("%3s $%02x%02x,X",  opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+2),
-		                                                         cpu_read(NULL, addr+1));
-		case ABSY: return TextFormat("%3s $%02x%02x,Y",  opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+2),
-		                                                         cpu_read(NULL, addr+1));
+		case ABSL: return TextFormat("%3s $%02X%02X",    opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+2),
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
+		case ABSX: return TextFormat("%3s $%02X%02X,X",  opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+2),
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
+		case ABSY: return TextFormat("%3s $%02X%02X,Y",  opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+2),
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
 		
 		
-		case IMMD: return TextFormat("%3s #$%02x",        opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+1));
+		case IMMD: return TextFormat("%3s #$%02X",       opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
 		
-		case IMPL: return TextFormat("%3s",              opcodes[cpu_read(NULL, addr)].o);
+		case IMPL: return TextFormat("%3s",              opcodes[(uint8_t)cpu_read(NULL, addr)].o);
 		
-		case INDI: return TextFormat("%3s ($%02x%02x)",  opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+2),
-		                                                         cpu_read(NULL, addr+1));
+		case INDI: return TextFormat("%3s ($%02X%02X)",  opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+2),
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
 		                                                         
-		case XIND: return TextFormat("%3s ($%02x%02x,X)",opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+2));
+		case XIND: return TextFormat("%3s ($%02X%02X,X)",opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+2),
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
 
-		case INDY: return TextFormat("%3s ($%02x%02x),Y",opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+2));
+		case INDY: return TextFormat("%3s ($%02X%02X),Y",opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+2),
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
 
-		case RELA: return TextFormat("%3s $%02x",        opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+1));
+		case RELA: return TextFormat("%3s $%02X",        opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
 		
-		case ZPAG: return TextFormat("%3s $%02x",        opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+1));
-		case ZPGX: return TextFormat("%3s $%02x,X",      opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+1));
-		case ZPGY: return TextFormat("%3s $%02x,Y",      opcodes[cpu_read(NULL, addr)].o,
-		                                                         cpu_read(NULL, addr+1));
+		case ZPAG: return TextFormat("%3s $%02X",        opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
+		case ZPGX: return TextFormat("%3s $%02X,X",      opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
+		case ZPGY: return TextFormat("%3s $%02X,Y",      opcodes[(uint8_t)cpu_read(NULL, addr)].o,
+		                                                         (uint8_t)cpu_read(NULL, addr+1));
+	}
+	
+	return "???";
+}
+
+void disassemble(uint16_t address) {
+	prg_base = address;
+	
+	for (int i=0; i<DISASM_SIZE; i++) {
+		disasm_cache[i].s    = get_inst_name(address);
+		disasm_cache[i].pc   = address;
+		disasm_cache[i].w    = get_inst_width(address);
+		disasm_cache[i].trap = get_inst_trap(address);
+		
+		address += get_inst_width(address);
 	}
 }
 
@@ -211,16 +280,16 @@ void debug_update() {
 		}
 	}*/
 	
-	if (cpu_running) {
-		for (int i=0; i<cpu_speed; i++) {
-			sys_step();
-		}
+	for (int i=0; i<cpu_speed && cpu_running; i++) {
+		sys_step();
 	}
 	
 	if (IsKeyPressed(KEY_A) && IsKeyDown(KEY_LEFT_CONTROL)) cpu_running = true, cpu_speed = 1;
 	if (IsKeyPressed(KEY_S) && IsKeyDown(KEY_LEFT_CONTROL)) cpu_running = false;
 	if (IsKeyPressed(KEY_R) && IsKeyDown(KEY_LEFT_CONTROL)) cpu_running = true, cpu_speed = 166420;
 	if (IsKeyPressed(KEY_H) && IsKeyDown(KEY_LEFT_CONTROL)) cpu_running = true, cpu_speed = 1060;
+	
+	if ((IsKeyPressed(KEY_F3) || IsKeyPressedRepeat(KEY_S)) && !cpu_running) sys_step();
 	
 	if (IsKeyPressed(KEY_D) && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_ASM;
 	if (IsKeyPressed(KEY_M) && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_MEM;
@@ -241,7 +310,47 @@ void debug_update() {
 	
 	if (hi_sel == H_ASM) {
 		if (IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP))       prg_sel--;
-		if (IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN))   prg_sel += get_inst_width(prg_sel);
+		if (IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN))   prg_sel++;
+		if (IsKeyPressed(KEY_F2)) {
+			if (disasm_cache[prg_sel + prg_off].trap < 0) {
+				uint16_t addr = disasm_cache[prg_sel + prg_off].pc;
+				
+				printf("Adding trap to addr $%04x, @ %d\n", addr, prg_sel + prg_off);
+				int trap = add_isnt_trap(addr);
+				printf("T: %d\n", trap);
+				
+			
+			} else {
+				uint16_t addr = disasm_cache[prg_sel + prg_off].pc;
+				
+				printf("Trap already exists at address $%04x, @%d; removing\n", addr, prg_sel + prg_off);
+				rm_inst_trap(addr);
+			}
+			
+			//update disassembly
+			disassemble(prg_base);
+		}
+		
+		if (prg_sel < 0) {
+			prg_sel = 0;
+			prg_off--;
+		}
+		
+		if (prg_sel > 31) {
+			prg_sel = 31;
+			prg_off++;
+		}
+		
+		if (prg_off+31 > DISASM_SIZE-1) {
+			disassemble(disasm_cache[DISASM_SIZE-1].pc +
+			            disasm_cache[DISASM_SIZE-1].w);
+			prg_sel = 0;
+			prg_off = 0;
+		}
+		
+		if (prg_off < 0) {
+			prg_off++;
+		}
 	}
 }
 
@@ -314,14 +423,39 @@ uint8_t get_state_color() {
 }
 
 void draw_disasm() {
-	int offset = 0;
 	for (int y=0; y<32; y++) {
-		DrawStringMonospace(TextFormat("%04X", prg_pointer + offset), 8 + 7, 168 + y * 8 + 8, 1, 0, WHITE);
-		DrawStringMonospace(TextFormat("%04X", prg_pointer + offset), 9 + 7, 168 + y * 8 + 8, 1, 0, WHITE);
 		
-		DrawStringMonospace(TextFormat("%3s", get_inst_name(prg_pointer + offset)), 9 + 7 * 6, 168 + y * 8 + 8, 1, 0, WHITE);
+		DrawStringMonospace(TextFormat("%04X", disasm_cache[y+prg_off].pc), 8 + 7, 168 + y * 8 + 8, 1, 0, WHITE);
 		
-		offset += get_inst_width(prg_pointer + offset);
+		for (int i=0; i<disasm_cache[y+prg_off].w; i++) {
+			DrawString(TextFormat("%02X", cpu_read(NULL, disasm_cache[y+prg_off].pc + i)),
+				9 + 7 * 6 + i * 3 * 6, 168 + y * 8 + 8, 1, 0, WHITE);
+		}
+		
+		if (cpu.state.pc == disasm_cache[y+prg_off].pc) {
+			DrawStringMonospace(get_inst_name(disasm_cache[y+prg_off].pc), 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, GREEN);
+		} else if (prg_sel == y) {
+			DrawStringMonospace(get_inst_name(disasm_cache[y+prg_off].pc), 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, GOLD);
+		} else if (disasm_cache[y+prg_off].trap > -1) {
+			DrawStringMonospace(get_inst_name(disasm_cache[y+prg_off].pc), 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, RED);
+		} else {
+			DrawStringMonospace(get_inst_name(disasm_cache[y+prg_off].pc), 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, WHITE);
+		}
+		
+		
+		DrawStringMonospace(TextFormat("%3d", y+prg_off), 8 + 7 + 6 * 43, 168 + y * 8 + 8, 1, 0, WHITE);
+		
+		/*
+		for (int i=0; i<get_inst_width(prg_pointer + offset); i++) {
+			DrawString(TextFormat("%02X", cpu_read(NULL, prg_pointer + offset + i)),
+				9 + 7 * 6 + i * 3 * 6, 168 + y * 8 + 8, 1, 0, WHITE);
+		}
+		
+		DrawStringMonospace(TextFormat("%3s", get_inst_name(prg_pointer + offset)),
+			9 + 7 * 6 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0,
+			cpu.state.pc == prg_pointer + offset ? GREEN : WHITE);
+		
+		offset += get_inst_width(prg_pointer + offset);*/
 	}
 }
 
@@ -354,6 +488,8 @@ void draw_mem() {
 }
 
 void debug_draw() {
+	//SetTargetFPS(2);
+	
 	//GuiEnable();
 	
 	ClearBackground(BLACK);

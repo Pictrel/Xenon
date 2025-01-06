@@ -12,7 +12,7 @@ xenon-rel: src/*.c bios.bin
 	                                                        /usr/lib/x86_64-linux-gnu/libdl.a -lm
 
 build/%.obj: bios/%.s
-	ca65 --cpu 6502 --verbose $< -o $@
+	ca65 --cpu 6502 --verbose $< -o $@ -l bios.lst
 	
 bios.bin: build/bios.obj
 	ld65 -v -o bios.bin build/*.obj -m bios.map -C conf/xenon_bios.ld

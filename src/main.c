@@ -718,7 +718,11 @@ int main(int argc, char **argv) {
 	
 	fb_b = GenImageColor(SCREEN_W, SCREEN_H, BLANK);
 	fb_o = GenImageColor(SCREEN_W, SCREEN_H, BLANK);
-	
+
+#ifdef CPU_DEBUG
+	disassemble(0xF000);
+#endif
+
 	while (!WindowShouldClose()) {
 		BeginDrawing();
 		update();
