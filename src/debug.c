@@ -14,6 +14,7 @@
 #define MAX_INST_WIDTH 3
 #define DISASM_SIZE  512
 #define MAX_TRAPS 16
+#define MAX_SYMBOLS 256
 
 int MeasureChar(uint8_t c, int scale);
 int DrawChar(uint8_t c, int x, int y, int scale, Color col);
@@ -88,6 +89,14 @@ struct {
 	int addr;
 } traps[MAX_TRAPS] = {0};
 
+typedef struct {
+	char *name;
+	int parent;
+	uint16_t address;
+} Symbol;
+
+Symbol symbols[MAX_SYMBOLS] = {0};
+
 extern Image fb_b;
 extern Image fb_o;
 extern Texture gpu_fb_b;
@@ -105,6 +114,8 @@ enum {
 } hi_sel = H_CONS;
 uint16_t mem_sel = 0xF000;
 uint16_t mem_pointer = 0xF000;
+int mem_digit_sel = 0;
+uint8_t mem_val;
 
 uint16_t prg_base;
 int prg_sel = 0;
@@ -119,6 +130,31 @@ Color rgb332(uint8_t n);
 bool handle_scn(void);
 void render_pixel(int x, int y);
 void render_scanline(int y);
+
+int free_symbol() {
+	for (int i=0; i<MAX_SYMBOLS; i++) {
+		if (!symbols[i].name) return i;
+	}
+}
+
+int add_symbol(Symbol symbol) {
+	int i = free_symbol();
+	
+	symbols[i] = symbol;
+	
+	return i;
+}
+
+int get_addr_symbol(uint16_t address) {
+	for (int i=0; i<MAX_SYMBOLS; i++) {
+		if (symbols[i].address == address) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+
 
 int add_isnt_trap(uint16_t addr) {
 	for (int i=0; i<MAX_TRAPS; i++) {
@@ -148,6 +184,48 @@ void rm_inst_trap(uint16_t addr) {
 			return;
 		}
 	}
+}
+
+int get_region(uint16_t addr) {
+	switch (addr >> 12) {
+		case 0x0: 
+		case 0x1: 
+		case 0x2: 
+		case 0x3: 
+		case 0x4: 
+		case 0x5: 
+		case 0x6: 
+		case 0x7: 
+		case 0x8: 
+		case 0x9: 
+		case 0xA: 
+		case 0xB: 
+			return 0; // wram
+		case 0xC: 
+		case 0xD: 
+			return 1; // vram
+		case 0xE: 
+			return 2; // i/o
+		case 0xF: 
+			return 3; // bios
+	}
+}
+
+//Finds the symbol with the greatest address lesser than ADDR, and same memory area
+int get_nearest_symbol(uint16_t addr) {
+	int greatest = -1;
+	
+	for (int i=0; i<MAX_SYMBOLS; i++) {
+		if ((symbols[i].address > symbols[greatest].address) &&
+		    (symbols[i].address <= addr) &&
+		    (get_region(symbols[i].address) ==
+		     get_region(addr))) {
+		    
+		    greatest = i;
+		}
+	}
+	
+	return greatest;
 }
 
 void sys_step() {
@@ -197,49 +275,63 @@ int get_inst_width(uint16_t addr) {
 	}
 }
 
+char *get_label_name(int i) {
+	if (symbols[i].parent > -1) {
+		return TextFormat("%s.%s:", symbols[symbols[i].parent].name, symbols[i].name);
+	} else {
+		return TextFormat("%s:", symbols[i].name);
+	}
+	
+}
+
+char *get_sym_name(int i, int offset) {
+	if (offset) {
+		if (symbols[i].parent > -1) {
+			return TextFormat("%s.%s+%d", symbols[symbols[i].parent].name, symbols[i].name, offset);
+		} else {
+			return TextFormat("%s+%d", symbols[i].name, offset);
+		}
+	} else {
+		if (symbols[i].parent > -1) {
+			return TextFormat("%s.%s", symbols[symbols[i].parent].name, symbols[i].name);
+		} else {
+			return TextFormat("%s", symbols[i].name);
+		}
+	}
+	
+}
+
+char *get_addr_name(uint16_t addr) {
+	
+	addr = (cpu_read(NULL, addr+1) << 8) + cpu_read(NULL, addr);
+	
+	int sym = get_nearest_symbol(addr);
+	
+	printf("Symbol for addr %04x, %d\n", addr, sym);
+	
+	if (sym > -1) {
+		return get_sym_name(sym, addr - symbols[sym].address);
+	} else {
+		return TextFormat("$%04X", addr);
+	}
+}
+
 char *get_inst_name(uint16_t addr) {
 	switch (opcodes[cpu_read(NULL, addr)].m) {
-		case NONE: return TextFormat("---");
-		case ACCU: return TextFormat("%3s A",            opcodes[(uint8_t)cpu_read(NULL, addr)].o);
-		
-		
-		case ABSL: return TextFormat("%3s $%02X%02X",    opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+2),
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-		case ABSX: return TextFormat("%3s $%02X%02X,X",  opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+2),
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-		case ABSY: return TextFormat("%3s $%02X%02X,Y",  opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+2),
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-		
-		
-		case IMMD: return TextFormat("%3s #$%02X",       opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-		
-		case IMPL: return TextFormat("%3s",              opcodes[(uint8_t)cpu_read(NULL, addr)].o);
-		
-		case INDI: return TextFormat("%3s ($%02X%02X)",  opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+2),
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-		                                                         
-		case XIND: return TextFormat("%3s ($%02X%02X,X)",opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+2),
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-
-		case INDY: return TextFormat("%3s ($%02X%02X),Y",opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+2),
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-
-		case RELA: return TextFormat("%3s $%02X",        opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-		
-		case ZPAG: return TextFormat("%3s $%02X",        opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-		case ZPGX: return TextFormat("%3s $%02X,X",      opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
-		case ZPGY: return TextFormat("%3s $%02X,Y",      opcodes[(uint8_t)cpu_read(NULL, addr)].o,
-		                                                         (uint8_t)cpu_read(NULL, addr+1));
+		case NONE: return TextFormat("      ---");
+		case ACCU: return TextFormat("      %3s A",            opcodes[(uint8_t)cpu_read(NULL, addr)].o);
+		case ABSL: return TextFormat("      %3s %s",           opcodes[(uint8_t)cpu_read(NULL, addr)].o, get_addr_name(addr+1));
+		case ABSX: return TextFormat("      %3s %s,X",         opcodes[(uint8_t)cpu_read(NULL, addr)].o, get_addr_name(addr+1));
+		case ABSY: return TextFormat("      %3s %s,Y",         opcodes[(uint8_t)cpu_read(NULL, addr)].o, get_addr_name(addr+1));
+		case IMMD: return TextFormat("      %3s #$%02X",       opcodes[(uint8_t)cpu_read(NULL, addr)].o, (uint8_t)cpu_read(NULL, addr+1));
+		case IMPL: return TextFormat("      %3s",              opcodes[(uint8_t)cpu_read(NULL, addr)].o);
+		case INDI: return TextFormat("      %3s (%s)",         opcodes[(uint8_t)cpu_read(NULL, addr)].o, get_addr_name(addr+1));
+		case XIND: return TextFormat("      %3s (%s,X)",       opcodes[(uint8_t)cpu_read(NULL, addr)].o, get_addr_name(addr+1));
+		case INDY: return TextFormat("      %3s (%s),Y",       opcodes[(uint8_t)cpu_read(NULL, addr)].o, get_addr_name(addr+1));
+		case RELA: return TextFormat("      %3s $%02X",        opcodes[(uint8_t)cpu_read(NULL, addr)].o, (uint8_t)cpu_read(NULL, addr+1));
+		case ZPAG: return TextFormat("      %3s $%02X",        opcodes[(uint8_t)cpu_read(NULL, addr)].o, (uint8_t)cpu_read(NULL, addr+1));
+		case ZPGX: return TextFormat("      %3s $%02X,X",      opcodes[(uint8_t)cpu_read(NULL, addr)].o, (uint8_t)cpu_read(NULL, addr+1));
+		case ZPGY: return TextFormat("      %3s $%02X,Y",      opcodes[(uint8_t)cpu_read(NULL, addr)].o, (uint8_t)cpu_read(NULL, addr+1));
 	}
 	
 	return "???";
@@ -248,14 +340,53 @@ char *get_inst_name(uint16_t addr) {
 void disassemble(uint16_t address) {
 	prg_base = address;
 	
+	bool labeled = false;
+	
 	for (int i=0; i<DISASM_SIZE; i++) {
-		disasm_cache[i].s    = get_inst_name(address);
-		disasm_cache[i].pc   = address;
-		disasm_cache[i].w    = get_inst_width(address);
-		disasm_cache[i].trap = get_inst_trap(address);
-		
-		address += get_inst_width(address);
+		int sym;
+		if (((sym = get_addr_symbol(address)) > -1) && !labeled) {
+			disasm_cache[i].s    = strdup(get_label_name(sym));
+			disasm_cache[i].pc   = address;
+			disasm_cache[i].w    = 0;
+			disasm_cache[i].trap = -1;
+			labeled = true;
+		} else {
+			labeled = false;
+			disasm_cache[i].s    = strdup(get_inst_name(address));
+			disasm_cache[i].pc   = address;
+			disasm_cache[i].w    = get_inst_width(address);
+			disasm_cache[i].trap = get_inst_trap(address);
+			
+			
+			address += get_inst_width(address);
+		}
 	}
+}
+
+int ctoi(char digit) {
+	if (digit >= '0' && digit <= '9') return digit - '0';
+	if (digit >= 'a' && digit <= 'f') return digit - 'a';
+	
+	return -1;
+}
+
+void handle_mem_digit(char digit) {
+	if (mem_digit_sel) {
+		mem_val <<= 4;
+		mem_val |= ctoi(digit);
+		mem_digit_sel++;
+		
+		if (mem_digit_sel == 2) {
+			cpu_write(NULL, mem_sel, mem_val);
+			mem_digit_sel = 0;
+		}
+		
+	} else {
+		mem_val = ctoi(digit);
+		mem_digit_sel++;
+	}
+	
+	
 }
 
 void debug_update() {
@@ -291,11 +422,11 @@ void debug_update() {
 	
 	if ((IsKeyPressed(KEY_F3) || IsKeyPressedRepeat(KEY_S)) && !cpu_running) sys_step();
 	
-	if (IsKeyPressed(KEY_D) && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_ASM;
-	if (IsKeyPressed(KEY_M) && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_MEM;
+	if (IsKeyPressed(KEY_D)      && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_ASM;
+	if (IsKeyPressed(KEY_M)      && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_MEM;
+	if (IsKeyPressed(KEY_ESCAPE) && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_MEM;
 	if (IsKeyPressed(KEY_U) && IsKeyDown(KEY_LEFT_CONTROL)) {
-		unbound = !unbound;
-		SetTargetFPS(unbound ? 0 : 60);
+		disassemble(prg_base);
 	}
 	
 	if (hi_sel == H_MEM) {
@@ -303,6 +434,10 @@ void debug_update() {
 		if (IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN))   mem_sel += IsKeyDown(KEY_LEFT_CONTROL) ? 0x80 : 0x08;
 		if (IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT))   mem_sel--;
 		if (IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT)) mem_sel++;
+		
+		char c = GetCharPressed();
+		
+		if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) handle_mem_digit(c);
 		
 		if (mem_sel < (mem_pointer))        mem_pointer = (mem_sel & 0xFFF8);
 		if (mem_sel > (mem_pointer + 0xA0)) mem_pointer = (mem_sel & 0xFFF8) - 0xA0;
@@ -433,13 +568,13 @@ void draw_disasm() {
 		}
 		
 		if (cpu.state.pc == disasm_cache[y+prg_off].pc) {
-			DrawStringMonospace(get_inst_name(disasm_cache[y+prg_off].pc), 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, GREEN);
+			DrawStringMonospace(disasm_cache[y+prg_off].s, 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, GREEN);
 		} else if (prg_sel == y) {
-			DrawStringMonospace(get_inst_name(disasm_cache[y+prg_off].pc), 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, GOLD);
+			DrawStringMonospace(disasm_cache[y+prg_off].s, 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, GOLD);
 		} else if (disasm_cache[y+prg_off].trap > -1) {
-			DrawStringMonospace(get_inst_name(disasm_cache[y+prg_off].pc), 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, RED);
+			DrawStringMonospace(disasm_cache[y+prg_off].s, 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, RED);
 		} else {
-			DrawStringMonospace(get_inst_name(disasm_cache[y+prg_off].pc), 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, WHITE);
+			DrawStringMonospace(disasm_cache[y+prg_off].s, 9 + 7 * 7 + MAX_INST_WIDTH * 3 * 6, 168 + y * 8 + 8, 1, 0, WHITE);
 		}
 		
 		
@@ -484,6 +619,13 @@ void draw_mem() {
 					8 + 292 + 4 + x * (7 * 1) + (7 * 32),
 					168 + 99 + y * 8, 1, WHITE);
 		}
+	}
+	
+	int sym = get_nearest_symbol(mem_sel);
+	
+	if (sym > -1) {
+		DrawStringMonospace(TextFormat("%04x", mem_sel),                       8 + 292 + 4 + (6 * 1), 168 + 99 + 21 * 8, 1, 1, WHITE);
+		DrawStringMonospace(get_sym_name(sym, mem_sel - symbols[sym].address), 8 + 292 + 4 + (6 * 7), 168 + 99 + 21 * 8, 1, 1, WHITE);
 	}
 }
 
@@ -545,6 +687,72 @@ void debug_draw() {
 	DrawStringMonospace(TextFormat("CYC:  %08X", cpu_cyc),     292 + 16 + 14 * 1,  168 + 16 * 3, 2, 1, WHITE);
 	
 	DrawFPS(0, 0);
+}
+
+void parse_lab_file(char *filename) {
+	FILE *fp;
+	
+	fp = fopen(filename, "r");
+	if (!fp) {
+		printf("Unable to open bios.lab. Ignoring.\n");
+		return;
+	}
+	
+	char buffer[256];
+	
+	fread(buffer, 1, 9, fp);
+	
+	if (strncmp(buffer, "XENLAB06\n", 9)) {
+		printf("Error: invalid list file\n");
+		return;
+	}
+	
+	int latest_parent = -1;
+	int i=0;
+	while (fgets(buffer, 255, fp)) {
+		Symbol sym;
+		
+		buffer[strlen(buffer)-1] = 0;
+		printf("'%-64s' ", buffer);
+		
+		char *p = buffer;
+		
+		// address
+		sym.address = strtol(p, &p, 0);
+		p++;
+		
+		// name
+		sym.name = strdup(p);
+		
+		if (sym.name[0] == '.') {
+			sym.parent    = latest_parent;
+			sym.name++;
+		} else {
+			latest_parent = free_symbol();
+			sym.parent    = -1;
+		}
+		
+		int index = add_symbol(sym);
+		
+		switch (get_region(sym.address)) {
+			case 0: printf("\033[34mW "); break;
+			case 1: printf("\033[32mV "); break;
+			case 2: printf("\033[33mI "); break;
+			case 3: printf("\033[31mB "); break;
+		}
+		
+		printf(" [%3d] %04x, %s%s \033[0m %d\n", index, sym.address, (sym.parent > -1) ? TextFormat("%s.", symbols[sym.parent].name) : "", sym.name, sym.address >> 12);
+	}
+}
+
+
+void debug_init() {
+	parse_lab_file("bios.lab");
+	parse_lab_file("xenon.lab");
+	
+	disassemble(0xF000);
+	
+	SetExitKey(0);
 }
 
 /*

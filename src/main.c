@@ -143,12 +143,11 @@ f: Select Floppy interrupt
 /*
 When an interrupt is fired, this register is set depending on the source.
 
------sss
+y-----ft
 
-S:
-	0 = timer interrupt
-	1 = floppy interrupt
-	7 = vyc interrupt
+y: VYX interrupt
+F: floppy interrupt
+t: timer interrupt
 */
 
 bool fd_motor = false;
@@ -720,7 +719,7 @@ int main(int argc, char **argv) {
 	fb_o = GenImageColor(SCREEN_W, SCREEN_H, BLANK);
 
 #ifdef CPU_DEBUG
-	disassemble(0xF000);
+	debug_init();
 #endif
 
 	while (!WindowShouldClose()) {
