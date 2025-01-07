@@ -466,6 +466,14 @@ void debug_update() {
 			disassemble(prg_base);
 		}
 		
+		if (IsKeyPressed(KEY_F4)) {
+			cpu.state.pc = disasm_cache[prg_sel + prg_off].pc;
+		}
+		
+		if (IsKeyPressed(KEY_KP_MULTIPLY)) {
+			reset_cpu();
+		}
+		
 		if (prg_sel < 0) {
 			prg_sel = 0;
 			prg_off--;

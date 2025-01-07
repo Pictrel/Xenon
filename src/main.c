@@ -170,6 +170,8 @@ Image fb_o;
 Texture gpu_fb_b;
 Texture gpu_fb_o;
 
+void debug_init();
+
 typedef struct __attribute__((packed)) {
 	uint8_t unused : 4;
 	uint8_t hflip  : 1;
@@ -675,6 +677,20 @@ void handle_tim() {
 	} 
 #endif
 
+void reset_cpu() {
+	m6502_reset(&cpu);
+	
+	// reset all the I/O registers
+	fd_motor = false;
+	fd_err   = 0;
+	fd_timer = 0;
+	fd_mode  = 0;
+	
+	IO_ICTL = 0;
+	
+	cpu.state.pc = cpu_read(NULL, 0xfffc) | (cpu_read(NULL, 0xfffd) << 8);
+}
+
 int main(int argc, char **argv) {
 	FILE *fp = fopen("bios.bin", "r");
 	if (!fp) fp = fopen("bin/bios.bin", "r");
@@ -713,7 +729,7 @@ int main(int argc, char **argv) {
 	cpu.write = cpu_write;
 	
 	m6502_power(&cpu, TRUE);
-	cpu.state.pc = cpu_read(NULL, 0xfffc) | (cpu_read(NULL, 0xfffd) << 8);
+	reset_cpu();
 	
 	fb_b = GenImageColor(SCREEN_W, SCREEN_H, BLANK);
 	fb_o = GenImageColor(SCREEN_W, SCREEN_H, BLANK);
