@@ -443,6 +443,10 @@ void debug_update() {
 		if (mem_sel > (mem_pointer + 0xA0)) mem_pointer = (mem_sel & 0xFFF8) - 0xA0;
 	}
 	
+	if (IsKeyPressed(KEY_KP_MULTIPLY)) {
+		reset_cpu();
+	}
+	
 	if (hi_sel == H_ASM) {
 		if (IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP))       prg_sel--;
 		if (IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN))   prg_sel++;
@@ -468,10 +472,6 @@ void debug_update() {
 		
 		if (IsKeyPressed(KEY_F4)) {
 			cpu.state.pc = disasm_cache[prg_sel + prg_off].pc;
-		}
-		
-		if (IsKeyPressed(KEY_KP_MULTIPLY)) {
-			reset_cpu();
 		}
 		
 		if (prg_sel < 0) {
