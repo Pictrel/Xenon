@@ -749,3 +749,8 @@ int main(int argc, char **argv) {
 	
 	return 0;
 }
+
+// TODO: add goto addr command for ASM
+// TODO: add goto pc command for ASM
+// TODO: add stacktrace
+// TODO: add tileset, tilemap

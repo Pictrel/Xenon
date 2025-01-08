@@ -114,12 +114,14 @@ enum {
 } hi_sel = H_CONS;
 uint16_t mem_sel = 0xF000;
 uint16_t mem_pointer = 0xF000;
+bool mem_goto = false;
 int mem_digit_sel = 0;
-uint8_t mem_val;
+uint16_t mem_val;
 
 uint16_t prg_base;
 int prg_sel = 0;
 int prg_off = 0;
+bool prg_jumping = false;
 bool unbound = false;
 
 extern bool irq;
@@ -130,6 +132,56 @@ Color rgb332(uint8_t n);
 bool handle_scn(void);
 void render_pixel(int x, int y);
 void render_scanline(int y);
+
+
+int ctoi(char digit) {
+	if (digit >= '0' && digit <= '9') return digit - '0';
+	if (digit >= 'a' && digit <= 'f') return digit - 'a' + 10;
+	
+	return -1;
+}
+
+void handle_mem_digit(char digit) {
+	if (mem_digit_sel) {
+		mem_val <<= 4;
+		mem_val |= ctoi(digit);
+		mem_digit_sel++;
+		
+		switch (hi_sel) {
+			case H_MEM:
+				if (prg_jumping) {
+					if (mem_digit_sel == 4) {
+						mem_sel     = mem_val;
+						mem_pointer = mem_val;
+						
+						mem_digit_sel = 0;
+						prg_jumping = false;
+					}
+				} else {
+					if (mem_digit_sel == 2) {
+						cpu_write(NULL, mem_sel, mem_val & 0xFF);
+						mem_digit_sel = 0;
+					};
+				}
+				break;
+			case H_ASM:
+				if (mem_digit_sel == 4 && prg_jumping) {
+					disassemble(mem_val);
+					prg_off = 0;
+					prg_sel = 0;
+					mem_digit_sel = 0;
+					prg_jumping = false;
+				};
+				break;
+		}
+		
+	} else {
+		mem_val = ctoi(digit);
+		mem_digit_sel++;
+	}
+	
+	
+}
 
 int free_symbol() {
 	for (int i=0; i<MAX_SYMBOLS; i++) {
@@ -363,32 +415,6 @@ void disassemble(uint16_t address) {
 	}
 }
 
-int ctoi(char digit) {
-	if (digit >= '0' && digit <= '9') return digit - '0';
-	if (digit >= 'a' && digit <= 'f') return digit - 'a';
-	
-	return -1;
-}
-
-void handle_mem_digit(char digit) {
-	if (mem_digit_sel) {
-		mem_val <<= 4;
-		mem_val |= ctoi(digit);
-		mem_digit_sel++;
-		
-		if (mem_digit_sel == 2) {
-			cpu_write(NULL, mem_sel, mem_val);
-			mem_digit_sel = 0;
-		}
-		
-	} else {
-		mem_val = ctoi(digit);
-		mem_digit_sel++;
-	}
-	
-	
-}
-
 void debug_update() {
 	ClearWindowState(FLAG_WINDOW_RESIZABLE);
 	
@@ -435,9 +461,11 @@ void debug_update() {
 		if (IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT))   mem_sel--;
 		if (IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT)) mem_sel++;
 		
-		char c = GetCharPressed();
-		
-		if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) handle_mem_digit(c);
+		if (IsKeyPressed(KEY_G)) {
+			prg_jumping = true;
+			mem_digit_sel = 0;
+			mem_val = 0;
+		}
 		
 		if (mem_sel < (mem_pointer))        mem_pointer = (mem_sel & 0xFFF8);
 		if (mem_sel > (mem_pointer + 0xA0)) mem_pointer = (mem_sel & 0xFFF8) - 0xA0;
@@ -474,6 +502,18 @@ void debug_update() {
 			cpu.state.pc = disasm_cache[prg_sel + prg_off].pc;
 		}
 		
+		if (IsKeyPressed(KEY_G)) {
+			prg_jumping = true;
+			mem_digit_sel = 0;
+			mem_val = 0;
+		}
+		
+		if (IsKeyPressed(KEY_F6)) {
+			disassemble(cpu.state.pc);
+			prg_off = 0;
+			prg_sel = 0;
+		}
+		
 		if (prg_sel < 0) {
 			prg_sel = 0;
 			prg_off--;
@@ -495,6 +535,9 @@ void debug_update() {
 			prg_off++;
 		}
 	}
+	
+	char c = GetCharPressed();
+	if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) handle_mem_digit(c);
 }
 
 /*
@@ -681,9 +724,13 @@ void debug_draw() {
 		(cpu.state.p & 0x04) ? 'I' : '-',
 		(cpu.state.p & 0x02) ? 'Z' : '-',
 		(cpu.state.p & 0x01) ? 'C' : '-'), 220, 10 + 16 * 6, 2, 0, WHITE);
-	DrawStringMonospace(TextFormat("NMI"),                  220,          10 + 16 * 8, 2, 0, nmi?GOLD:WHITE);
-	DrawStringMonospace(TextFormat("IRQ"),                  220 + 14 * 4, 10 + 16 * 8, 2, 0, irq?GOLD:WHITE);
-	DrawStringMonospace(TextFormat("%s", get_state_name()), 220 + 14 * 8, 10 + 16 * 8, 2, 0, WHITE);
+	DrawStringMonospace(TextFormat("NMI"),                  220,           10 + 16 * 8, 2, 0, nmi?GOLD:WHITE);
+	DrawStringMonospace(TextFormat("IRQ"),                  220 + 14 * 4,  10 + 16 * 8, 2, 0, irq?GOLD:WHITE);
+	DrawStringMonospace(TextFormat("%s", get_state_name()), 220 + 14 * 8,  10 + 16 * 8, 2, 0, WHITE);
+	
+	if (prg_jumping) {
+		DrawStringMonospace(TextFormat("GOTO %04X", mem_val), 220 + 14 * 16, 10 + 16 * 8, 2, 0, WHITE);
+	}
 	
 	// I/O
 	DrawStringMonospace(TextFormat("VY:   %02X", IO_VY),       292 + 16 + 14 * 1,  168 + 16 * 0, 2, 1, WHITE);
