@@ -11,6 +11,8 @@
 #include <raylib.h>
 #include <stdint.h>
 
+bool gfx_debugger_enabled = true;
+
 #define MAX_INST_WIDTH 3
 #define DISASM_SIZE  512
 #define MAX_TRAPS 16
@@ -39,6 +41,13 @@ typedef enum {
 	ZPGX,
 	ZPGY
 } Imode;
+
+const Color debug_pal[4] = {
+	(Color){0x7c, 0x3f, 0x58, 0xff},
+	(Color){0xeb, 0x6b, 0x6f, 0xff},
+	(Color){0xf9, 0xa8, 0x75, 0xff},
+	(Color){0xff, 0xf6, 0xd3, 0xff}
+};
 
 const struct {
 	char *o;
@@ -110,7 +119,9 @@ int cpu_speed = 166420;
 enum {
 	H_CONS = 0,
 	H_MEM = 1,
-	H_ASM = 2
+	H_ASM = 2,
+	H_TILESET = 3,
+	H_TILEMAP = 4
 } hi_sel = H_CONS;
 uint16_t mem_sel = 0xF000;
 uint16_t mem_pointer = 0xF000;
@@ -337,6 +348,8 @@ char *get_label_name(int i) {
 }
 
 char *get_sym_name(int i, int offset) {
+	if (i == -1) return "NULL";
+	
 	if (offset) {
 		if (symbols[i].parent > -1) {
 			return TextFormat("%s.%s+%d", symbols[symbols[i].parent].name, symbols[i].name, offset);
@@ -415,9 +428,7 @@ void disassemble(uint16_t address) {
 	}
 }
 
-void debug_update() {
-	ClearWindowState(FLAG_WINDOW_RESIZABLE);
-	
+void debug_update() {	
 	/*if (cpu_running) {
 		for (int y=0; y<SCREEN_H + VBLANK_SIZE / 4; y++) {
 			if (y == SCREEN_H) {
@@ -437,7 +448,12 @@ void debug_update() {
 		}
 	}*/
 	
-	for (int i=0; i<cpu_speed && cpu_running; i++) {
+	SetWindowSize(
+		GetRenderWidth()  / (SCREEN_W * 3) * (SCREEN_W * 3),
+		GetRenderHeight() / (SCREEN_H * 1) * (SCREEN_H * 1)
+	);
+	
+	for (int i=0; i<(cpu_speed) && cpu_running; i++) {
 		sys_step();
 	}
 	
@@ -450,7 +466,9 @@ void debug_update() {
 	
 	if (IsKeyPressed(KEY_D)      && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_ASM;
 	if (IsKeyPressed(KEY_M)      && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_MEM;
-	if (IsKeyPressed(KEY_ESCAPE) && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_MEM;
+	if (IsKeyPressed(KEY_ESCAPE) && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_CONS;
+	if (IsKeyPressed(KEY_T)      && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_TILESET;
+	if (IsKeyPressed(KEY_M)      && IsKeyDown(KEY_LEFT_CONTROL)) hi_sel = H_TILEMAP;
 	if (IsKeyPressed(KEY_U) && IsKeyDown(KEY_LEFT_CONTROL)) {
 		disassemble(prg_base);
 	}
@@ -680,6 +698,83 @@ void draw_mem() {
 	}
 }
 
+/*
+void draw_stack() {
+	for (int y=0; y<14; y++) {
+		uint16_t addr = 0x0100 + (0xfe - y * 2);
+		
+		uint16_t value = (cpu_read(NULL, addr+1) << 8) |
+		                 (cpu_read(NULL, addr));
+		
+		int sym = get_nearest_symbol(value);
+		
+		DrawStringMonospace(TextFormat("%04x", addr),                                                        8 + 416 + 4 + 6 * 2, 10 + 8 * (13 - y + 1), 1, 1, WHITE);
+		DrawStringMonospace(TextFormat("%04x (%s)", value, get_sym_name(sym, value - symbols[sym].address)), 8 + 416 + 4 + 6 * 8, 10 + 8 * (13 - y + 1), 1, 1, WHITE);
+	}
+}
+*/
+
+void DrawTile(int x, int y, int chr, int scale) {
+	for (int i=0; i<8; i++) {
+		for (int j=0; j<8; j++) {
+			DrawRectangle(x + i * scale,
+			              y + j * scale, scale, scale, debug_pal[get_tile_value(chr, i, j) % 4]);
+		}
+	}
+}
+
+void draw_tileset() {
+	for (int i=0; i<256; i++) {
+		DrawTile(626 + (i % 16) * 2 * 8,
+		         10  + (i / 16) * 2 * 8, i, 2);
+	}
+}
+
+void draw_tilemap() {
+	for (int x=0; x<32; x++) {
+		for (int y=0; y<32; y++) {
+			DrawTile(910 + (x * 1 * 8),
+			         10  + (y * 1 * 8), cpu_read(NULL, 0xC800 + x + y * 32), 1);
+		}
+	}
+	
+	for (int x=0; x<200; x++) DrawPixel(910 + (IO_VMX + x)   % 256,  10 + (IO_VMY + 0)   % 256,  GOLD);
+	for (int y=0; y<150; y++) DrawPixel(910 + (IO_VMX + 0)   % 256,  10 + (IO_VMY + y)   % 256,  GOLD);
+	for (int x=0; x<200; x++) DrawPixel(910 + (IO_VMX + x)   % 256,  10 + (IO_VMY + 150) % 256,  GOLD);
+	for (int y=0; y<150; y++) DrawPixel(910 + (IO_VMX + 200) % 256,  10 + (IO_VMY + y)   % 256,  GOLD);
+	//DrawRectangleLines(910 + IO_VMX, 10 + IO_VMY, 200, 150, GOLD);
+}
+
+void draw_obj() {
+	for (int x=0; x<4; x++) {
+		DrawStringMonospace(TextFormat("%02x X  Y  T  A", x * 8),
+		                   629 + (x * 140),
+		                   276,
+		                   	1, 1, WHITE);
+	}
+	
+	for (int i=0; i<32; i++) {
+		/*DrawRectangleLines(626 + (i / 8) * 70,
+		                   288 + (i % 8) * 20, (8 * 2) + 2, (8 * 2) + 2, WHITE);*/
+		
+		DrawTile(626 + (i / 8) * 140,
+		         288 + (i % 8) * 20, cpu_read(NULL, 0xC003 + i * 4), 2);
+		
+		DrawStringMonospace(TextFormat("%02x %02x %02x %02x %c%c%1d",
+		                                            cpu_read(NULL, 0xC001 + i * 4),
+		                                            cpu_read(NULL, 0xC002 + i * 4),
+		                                            cpu_read(NULL, 0xC003 + i * 4),
+		                                            cpu_read(NULL, 0xC000 + i * 4),
+		                                            cpu_read(NULL, 0xC000 + i * 4) & 0x08 ? 'H' : '-',
+		                                            cpu_read(NULL, 0xC000 + i * 4) & 0x04 ? 'V' : '-',
+		                                            cpu_read(NULL, 0xC000 + i * 4) & 0x03
+		                                            ),
+		                   648 + (i / 8) * 140,
+		                   292 + (i % 8) * 20,
+		                   	1, 1, WHITE);
+	}
+}
+
 void debug_draw() {
 	//SetTargetFPS(2);
 	
@@ -694,8 +789,8 @@ void debug_draw() {
 	gpu_fb_o = LoadTextureFromImage(fb_o);
 	
 	// Display 
-	DrawRectangleLines(8,  8, 200+4, 150+4, rgb332(0xff));
-	DrawRectangleLines(9,  9, 200+2, 150+2, rgb332(0xff));
+	DrawRectangleLines(8,  8, 200+4, 150+4, WHITE);
+	DrawRectangleLines(9,  9, 200+2, 150+2, WHITE);
 	DrawTexture(gpu_fb_b, 10, 10, WHITE);
 	DrawTexture(gpu_fb_o, 10, 10, WHITE);
 	DrawRectangle(10 + ((cpu_cyc) % 265*4) / 4 - 1,
@@ -708,6 +803,26 @@ void debug_draw() {
 	// Memory viewer
 	DrawRectangle(8 + 292 + 4, 168 + 91, 292 - 4, 182, rgb332((hi_sel == H_MEM) ? 0x02 : 0x01));
 	draw_mem();
+	
+	if (GetRenderWidth() >= SCREEN_W * 6) {
+		// Tileset viewer
+		DrawRectangleLines(624,  8, 256+4, 256+4, WHITE);
+		DrawRectangleLines(625,  9, 256+2, 256+2, WHITE);
+		draw_tileset();
+		
+		// Tilemap viewer
+		DrawRectangleLines(908,  8, 256+4, 256+4, WHITE);
+		DrawRectangleLines(909,  9, 256+2, 256+2, WHITE);
+		draw_tilemap();
+		
+		
+		// OAM viewer
+		draw_obj();
+	}
+	
+	// Stack trace
+	//DrawRectangle(8 + 416 + 4, 10, 600 - 8 - 416 - 16, 16 * 8, rgb332(0x01));
+	//draw_stack();
 	
 	// Registers
 	DrawStringMonospace(TextFormat("A:  %02X\n", cpu.state.a),  220, 10,          2, 0, WHITE);
@@ -740,6 +855,8 @@ void debug_draw() {
 	DrawStringMonospace(TextFormat("FSTA: %02X", get_FSTA()),  292 + 16 + 14 * 1,  168 + 16 * 2, 2, 1, WHITE);
 	DrawStringMonospace(TextFormat("FPOS: %02X", fd_pos),      292 + 16 + 14 * 11, 168 + 16 * 2, 2, 1, WHITE);
 	DrawStringMonospace(TextFormat("CYC:  %08X", cpu_cyc),     292 + 16 + 14 * 1,  168 + 16 * 3, 2, 1, WHITE);
+	
+	
 	
 	DrawFPS(0, 0);
 }
@@ -808,6 +925,10 @@ void debug_init() {
 	disassemble(0xF000);
 	
 	SetExitKey(0);
+
+	SetWindowMinSize(SCREEN_W * 3,  SCREEN_H * 3);
+	SetWindowMaxSize(SCREEN_W * 6,  SCREEN_H * 3);
+	SetWindowSize(SCREEN_W * 5,  SCREEN_H * 3);
 }
 
 /*

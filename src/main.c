@@ -467,19 +467,7 @@ void cpu_write(void *ctx, zuint16 addr, zuint8 val) {
 	else if (addr >= 0xF000 && addr <= 0xFFFF) return; //u cant write to bios dummy
 }
 
-
-
-
-
-/* void DrawTile(int col, int x, int y, int chr) {
-	for (int i=0; i<8; i++) {
-		for (int j=0; j<8; j++) {
-			DrawRectangle((x + i) * 2,
-			              (y + j) * 2, 2, 2, cpal[get_tile_value(chr, i, j) % 4 + (col % 4) * 4]);
-		}
-	}
-}
-
+/*
 void DrawSprite(int col, int x, int y, int chr) {
 	for (int i=0; i<8; i++) {
 		for (int j=0; j<8; j++) {
